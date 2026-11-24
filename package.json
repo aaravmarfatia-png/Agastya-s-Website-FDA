@@ -1,0 +1,23 @@
+{
+  "name": "food-safety-watch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Food safety & consumer protection updates from government and UN sources, with a 4D globe.",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "build:world": "node scripts/build-world.mjs",
+    "data": "python3 fetch_feeds.py && python3 fetch_crises.py"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
+    "gsap": "^3.15.1",
+    "three": "^0.187.0",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "i18n-iso-countries": "^7.14.0"
+  }
+}

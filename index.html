@@ -10,6 +10,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./node_modules/three/build/three.module.js",
+      "three/addons/": "./node_modules/three/examples/jsm/",
+      "gsap": "./node_modules/gsap/index.js",
+      "topojson-client": "./node_modules/topojson-client/src/index.js",
+      "@mediapipe/tasks-vision": "./node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"
+    }
+  }
+  </script>
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
@@ -26,6 +37,7 @@
         <button class="tab" data-view="feed" aria-current="page">Live feed</button>
         <button class="tab" data-view="sources">Trusted sources</button>
         <button class="tab" data-view="about">About</button>
+        <button class="tab tab-4d" data-enter-4d>4D globe</button>
       </div>
       <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
         <span></span><span></span>
@@ -39,6 +51,7 @@
       <li><button data-view="feed"><span>Live feed</span></button></li>
       <li><button data-view="sources"><span>Trusted sources</span></button></li>
       <li><button data-view="about"><span>About</span></button></li>
+      <li><button data-enter-4d><span>4D globe</span></button></li>
     </ul>
     <p class="menu-note">Official government &amp; UN sources only</p>
   </div>
@@ -69,6 +82,10 @@
             <div class="globe-col">
               <span class="eyebrow">Explore in 4D</span>
               <h2 id="atlas-title">Where alerts come from, <em>and when.</em></h2>
+              <button class="cta enter-4d" data-enter-4d>
+                <span>Enter the full 4D globe</span>
+                <span class="cta-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg></span>
+              </button>
               <p class="atlas-hint">Drag to spin the globe. Every dot is a country: click one, or search below, to open its official food safety sources. Scrub or press play to move through time.</p>
               <div class="finder" role="search">
                 <label class="finder-input">
@@ -235,5 +252,6 @@
   <script src="explore.js"></script>
   <script src="countries-ui.js"></script>
   <script src="cursor.js"></script>
+  <script type="module" src="fourd/launch.js"></script>
 </body>
 </html>

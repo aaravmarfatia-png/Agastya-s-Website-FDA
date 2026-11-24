@@ -1,0 +1,27 @@
+# AI assistant / editor tooling (local only)
+.claude/
+.agents/
+skills-lock.json
+CLAUDE.md
+.cursor/
+.vscode/
+.idea/
+
+# Dependencies (reinstall with `npm install`)
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / logs / secrets
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+
+# Local data caches (rebuilt by fetch_crises.py)
+data/cache/
