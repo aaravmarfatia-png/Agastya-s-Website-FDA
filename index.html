@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Food Safety Watch — Official recalls, alerts &amp; guidance</title>
+  <meta name="description" content="Food safety and consumer protection updates gathered only from government and United Nations sources.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%23264d40'/><path d='m10.5 16 4 4 7-8' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- Floating island navigation -->
+  <header class="nav-wrap">
+    <nav class="island" aria-label="Sections">
+      <a class="brand" href="#feed" data-view="feed">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z"/><path class="tick" d="m10.5 16 4 4 7-8"/></svg>
+        <span class="brand-name">Food Safety Watch</span>
+      </a>
+      <div class="tabs">
+        <button class="tab" data-view="feed" aria-current="page">Live feed</button>
+        <button class="tab" data-view="sources">Trusted sources</button>
+        <button class="tab" data-view="about">About</button>
+      </div>
+      <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
+        <span></span><span></span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- Mobile full-screen menu -->
+  <div class="menu" id="menu" aria-hidden="true">
+    <ul>
+      <li><button data-view="feed"><span>Live feed</span></button></li>
+      <li><button data-view="sources"><span>Trusted sources</span></button></li>
+      <li><button data-view="about"><span>About</span></button></li>
+    </ul>
+    <p class="menu-note">Official government &amp; UN sources only</p>
+  </div>
+
+  <main id="main">
+    <!-- ================= FEED ================= -->
+    <section id="view-feed" class="view">
+      <div class="wrap hero-bento">
+        <div class="hero-copy reveal">
+          <span class="eyebrow">Government &amp; UN sources only</span>
+          <h1>Recalls, alerts and safety news, <em>straight from the regulators.</em></h1>
+          <p class="lede">Every update comes from an official body, including the FDA, CDC, UK Food Standards Agency, CFIA, EFSA, WHO and FAO. Each link opens the original notice on the agency's own site.</p>
+          <div class="hero-actions">
+            <button class="cta" data-view="sources">
+              <span>Browse trusted sources</span>
+              <span class="cta-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg></span>
+            </button>
+            <p class="updated" id="updated"></p>
+          </div>
+        </div>
+        <dl class="stats" id="stats"></dl>
+      </div>
+
+      <!-- 4D explorer: 3D globe + time -->
+      <div class="wrap">
+        <section class="bezel atlas reveal" aria-labelledby="atlas-title">
+          <div class="core atlas-core">
+            <div class="globe-col">
+              <span class="eyebrow">Explore in 4D</span>
+              <h2 id="atlas-title">Where alerts come from, <em>and when.</em></h2>
+              <p class="atlas-hint">Drag to spin the globe. Click a region to filter the feed. Scrub or press play to move through time.</p>
+              <div class="globe-stage" id="globe-stage">
+                <canvas id="globe" tabindex="0" aria-label="Interactive globe of official sources. Use arrow keys to rotate. The region list beside it offers the same filters."></canvas>
+                <div class="globe-tip" id="globe-tip" hidden></div>
+              </div>
+            </div>
+
+            <div class="time-col">
+              <div class="readout">
+                <span class="readout-label">Time window · 7 days</span>
+                <p class="win-label" id="win-label"></p>
+                <p class="win-sum" id="win-sum"></p>
+              </div>
+
+              <div class="chart-wrap">
+                <div class="legend" aria-hidden="true">
+                  <span><i class="sw recall"></i>Recalls</span>
+                  <span><i class="sw news"></i>News</span>
+                  <span><i class="sw alert"></i>Alerts</span>
+                </div>
+                <div class="chart" id="chart"></div>
+                <div class="chart-tip" id="chart-tip" hidden></div>
+              </div>
+
+              <div class="scrub">
+                <button class="play" id="play" aria-label="Play timeline" aria-pressed="false">
+                  <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+                  <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg>
+                </button>
+                <label class="sr-only" for="scrub">Time window end date</label>
+                <input type="range" id="scrub" min="0" max="59" value="59" step="1">
+              </div>
+
+              <div class="region-list" id="region-list" aria-label="Regions"></div>
+
+              <details class="table-view">
+                <summary>View daily counts as a table</summary>
+                <div id="chart-table"></div>
+              </details>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="wrap">
+        <div class="bezel controls-shell reveal">
+          <div class="core controls" role="search">
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <span class="sr-only">Search</span>
+              <input id="q" type="search" placeholder="Search products, allergens, firms… e.g. peanut, listeria, milk" autocomplete="off">
+            </label>
+
+            <div class="control-row">
+              <div class="seg" id="cat" role="radiogroup" aria-label="Type">
+                <button role="radio" data-val="all" aria-checked="true">All</button>
+                <button role="radio" data-val="Recall" aria-checked="false"><i class="dot recall"></i>Recalls</button>
+                <button role="radio" data-val="Alert" aria-checked="false"><i class="dot alert"></i>Alerts</button>
+                <button role="radio" data-val="News" aria-checked="false"><i class="dot news"></i>News</button>
+              </div>
+              <div class="selects">
+                <label class="select">
+                  <span>Region</span>
+                  <select id="region"><option value="all">All regions</option></select>
+                </label>
+                <label class="select">
+                  <span>Agency</span>
+                  <select id="agency"><option value="all">All agencies</option></select>
+                </label>
+                <label class="select">
+                  <span>Period</span>
+                  <select id="period">
+                    <option value="7">Last 7 days</option>
+                    <option value="30" selected>Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="all">Any time</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="result-count" id="count" aria-live="polite"></p>
+        <div id="feed-list" class="feed"></div>
+        <div class="more-wrap">
+          <button id="more" class="cta cta-ghost" hidden>
+            <span>Show more updates</span>
+            <span class="cta-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SOURCES ================= -->
+    <section id="view-sources" class="view" hidden>
+      <div class="wrap page-hero reveal">
+        <span class="eyebrow">The directory</span>
+        <h1>Trusted <em>sources</em></h1>
+        <p class="lede">Only government agencies and United Nations bodies are included. Sources marked <span class="badge live">Live feed</span> are pulled into this site automatically. The rest have no public feed we can read, so we link straight to them.</p>
+      </div>
+      <div class="wrap" id="directory"></div>
+    </section>
+
+    <!-- ================= ABOUT ================= -->
+    <section id="view-about" class="view" hidden>
+      <div class="wrap page-hero reveal">
+        <span class="eyebrow">How it works</span>
+        <h1>About <em>this site</em></h1>
+      </div>
+      <div class="wrap about-grid">
+        <div class="bezel reveal"><div class="core prose">
+          <h2>What it does</h2>
+          <p>Food Safety Watch gathers food recalls, allergy alerts, outbreak notices and consumer protection news from official public feeds and puts them on one page that you can search and filter.</p>
+          <h2>The trust rule</h2>
+          <p>The site only shows links on government or United Nations web domains, such as <code>.gov</code>, <code>.gov.uk</code>, <code>.nhs.uk</code>, <code>.gov.in</code>, <code>canada.ca</code>, <code>europa.eu</code>, <code>who.int</code> and <code>fao.org</code>. The collector checks every link and drops any item from another domain.</p>
+          <h2>How it stays current</h2>
+          <p>A small script (<code>fetch_feeds.py</code>) downloads each agency's public RSS feed or open-data API and saves the results. Run it again, or schedule it, to refresh the page. The time of the last update is shown at the top of the feed.</p>
+          <h2>Important</h2>
+          <p>This is an independent reading aid. It is not affiliated with or endorsed by any of the agencies listed. Always check the original notice on the agency's site before acting on it. If you have eaten a recalled product and feel unwell, contact a doctor or your local health service.</p>
+        </div></div>
+        <div class="bezel reveal"><div class="core">
+          <h2 class="status-title">Feed status</h2>
+          <div id="status"></div>
+        </div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <p>Content belongs to the agencies listed and is shown with links to the original notices. Independent site, not affiliated with any government or UN body.</p>
+    </div>
+  </footer>
+
+  <script src="data/feed.js"></script>
+  <script src="app.js"></script>
+  <script src="explore.js"></script>
+  <script src="cursor.js"></script>
+</body>
+</html>
