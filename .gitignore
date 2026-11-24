@@ -25,3 +25,6 @@ Thumbs.db
 
 # Local data caches (rebuilt by fetch_crises.py)
 data/cache/
+
+# Desktop app build output
+dist/

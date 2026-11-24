@@ -11,7 +11,7 @@ export class HeadTracker {
 
   async start(previewEl) {
     const vision = await import("@mediapipe/tasks-vision");
-    const fileset = await vision.FilesetResolver.forVisionTasks(new URL("node_modules/@mediapipe/tasks-vision/wasm", document.baseURI).href);
+    const fileset = await vision.FilesetResolver.forVisionTasks(new URL("vendor/lib/@mediapipe/tasks-vision/wasm", document.baseURI).href);
     this.detector = await vision.FaceDetector.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: new URL("vendor/blaze_face_short_range.tflite", document.baseURI).href, delegate: "GPU" },
       runningMode: "VIDEO", minDetectionConfidence: 0.5,

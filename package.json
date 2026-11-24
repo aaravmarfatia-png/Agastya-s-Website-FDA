@@ -7,17 +7,67 @@
   "scripts": {
     "serve": "python3 -m http.server 8000",
     "build:world": "node scripts/build-world.mjs",
-    "data": "python3 fetch_feeds.py && python3 fetch_crises.py"
+    "data": "python3 fetch_feeds.py && python3 fetch_crises.py",
+    "dist:win": "node scripts/vendor-libs.mjs && electron-builder --win --x64",
+    "vendor": "node scripts/vendor-libs.mjs"
   },
-  "dependencies": {
+  "devDependencies": {
     "@mediapipe/tasks-vision": "^1.2.3",
+    "@types/three": "^0.187.0",
+    "electron-builder": "^26.18.0",
     "gsap": "^3.15.1",
+    "i18n-iso-countries": "^7.14.0",
     "three": "^0.187.0",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2"
   },
-  "devDependencies": {
-    "@types/three": "^0.187.0",
-    "i18n-iso-countries": "^7.14.0"
+  "main": "desktop/main.cjs",
+  "author": "Food Safety Watch",
+  "build": {
+    "appId": "org.foodsafetywatch.desktop",
+    "productName": "Food Safety Watch",
+    "copyright": "Data © the agencies listed in the app",
+    "electronVersion": "45.4.1",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "desktop/**",
+      "index.html",
+      "styles.css",
+      "app.js",
+      "explore.js",
+      "countries-ui.js",
+      "cursor.js",
+      "data/*.js",
+      "data/*.json",
+      "fourd/**",
+      "vendor/**",
+      "build/icon.png",
+      "package.json",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Food Safety Watch",
+      "artifactName": "Food-Safety-Watch-Setup-${version}.${ext}"
+    }
   }
 }
