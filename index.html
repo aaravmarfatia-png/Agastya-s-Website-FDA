@@ -69,7 +69,24 @@
             <div class="globe-col">
               <span class="eyebrow">Explore in 4D</span>
               <h2 id="atlas-title">Where alerts come from, <em>and when.</em></h2>
-              <p class="atlas-hint">Drag to spin the globe. Click a region to filter the feed. Scrub or press play to move through time.</p>
+              <p class="atlas-hint">Drag to spin the globe. Every dot is a country: click one, or search below, to open its official food safety sources. Scrub or press play to move through time.</p>
+              <div class="finder" role="search">
+                <label class="finder-input">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                  <span class="sr-only">Find a country</span>
+                  <input id="country-q" type="search" placeholder="Find any of 194 countries…" autocomplete="off"
+                         role="combobox" aria-expanded="false" aria-controls="country-results" aria-autocomplete="list">
+                </label>
+                <button class="dice" id="dice" type="button" aria-label="Surprise me: fly to a random country" title="Surprise me">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r="1.2"/><circle cx="15" cy="15" r="1.2"/><circle cx="15" cy="9" r="1.2"/><circle cx="9" cy="15" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg>
+                </button>
+                <ul id="country-results" class="finder-results" role="listbox" hidden></ul>
+              </div>
+              <div class="globe-legend" aria-hidden="true">
+                <span><i class="pin full"></i>National authority + WHO</span>
+                <span><i class="pin ring"></i>WHO country page</span>
+                <span><i class="pin live"></i>Live alerts</span>
+              </div>
               <div class="globe-stage" id="globe-stage">
                 <canvas id="globe" tabindex="0" aria-label="Interactive globe of official sources. Use arrow keys to rotate. The region list beside it offers the same filters."></canvas>
                 <div class="globe-tip" id="globe-tip" hidden></div>
@@ -170,6 +187,7 @@
         <h1>Trusted <em>sources</em></h1>
         <p class="lede">Only government agencies and United Nations bodies are included. Sources marked <span class="badge live">Live feed</span> are pulled into this site automatically. The rest have no public feed we can read, so we link straight to them.</p>
       </div>
+      <div class="wrap" id="world"></div>
       <div class="wrap" id="directory"></div>
     </section>
 
@@ -185,6 +203,7 @@
           <p>Food Safety Watch gathers food recalls, allergy alerts, outbreak notices and consumer protection news from official public feeds and puts them on one page that you can search and filter.</p>
           <h2>The trust rule</h2>
           <p>The site only shows links on government or United Nations web domains, such as <code>.gov</code>, <code>.gov.uk</code>, <code>.nhs.uk</code>, <code>.gov.in</code>, <code>canada.ca</code>, <code>europa.eu</code>, <code>who.int</code> and <code>fao.org</code>. The collector checks every link and drops any item from another domain.</p>
+          <p>The <b>every country</b> directory covers all 194 WHO member states. Each country links to its WHO country office. Where possible, it also links to a national food safety, health or consumer protection authority. Those links are checked automatically (<code>build_countries.py</code>), and any site that doesn't respond, shows an error, or is under maintenance is left out rather than guessed.</p>
           <h2>How it stays current</h2>
           <p>A small script (<code>fetch_feeds.py</code>) downloads each agency's public RSS feed or open-data API and saves the results. Run it again, or schedule it, to refresh the page. The time of the last update is shown at the top of the feed.</p>
           <h2>Important</h2>
@@ -198,6 +217,12 @@
     </section>
   </main>
 
+  <!-- Country drawer -->
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true">
+    <div class="drawer-inner" id="drawer-body"></div>
+  </aside>
+
   <footer class="footer">
     <div class="wrap">
       <p>Content belongs to the agencies listed and is shown with links to the original notices. Independent site, not affiliated with any government or UN body.</p>
@@ -205,8 +230,10 @@
   </footer>
 
   <script src="data/feed.js"></script>
+  <script src="data/countries.js"></script>
   <script src="app.js"></script>
   <script src="explore.js"></script>
+  <script src="countries-ui.js"></script>
   <script src="cursor.js"></script>
 </body>
 </html>

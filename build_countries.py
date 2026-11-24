@@ -143,7 +143,7 @@ C = [
     ("KGZ", "Kyrgyzstan", "Asia", 42.87, 74.59, []),
     ("LAO", "Laos", "Asia", 17.97, 102.60, []),
     ("LBN", "Lebanon", "Asia", 33.89, 35.50, [("Ministry of Public Health", "https://www.moph.gov.lb/")]),
-    ("MYS", "Malaysia", "Asia", 3.14, 101.69, [("Food Safety and Quality Division", "https://hq.moh.gov.my/fsq/")]),
+    ("MYS", "Malaysia", "Asia", 3.14, 101.69, [("Ministry of Health: Food Safety and Quality", "https://hq.moh.gov.my/fsq/")]),
     ("MDV", "Maldives", "Asia", 4.18, 73.51, [("Ministry of Health", "https://health.gov.mv/")]),
     ("MNG", "Mongolia", "Asia", 47.92, 106.92, []),
     ("MMR", "Myanmar", "Asia", 19.76, 96.08, [("Food and Drug Administration", "https://www.fda.gov.mm/")]),
@@ -248,7 +248,7 @@ def _curl(url: str, ua: str) -> tuple[int, bytes]:
     if i < 0:
         return 0, b""
     try:
-        return int(out[i + 12:].strip() or 0), out[:i]
+        return int(out[i + len(b"\n__STATUS__"):].strip() or 0), out[:i]
     except ValueError:
         return 0, b""
 
@@ -272,7 +272,7 @@ def check(url: str) -> tuple[bool, str]:
 
 
 # Titles that mean the page is an error/parking page rather than the authority.
-BAD_TITLE = re.compile(r"not found|404|error|forbidden|access denied|request rejected|blocked|captcha|domain .*sale|parked|suspended|index of|attention required|just a moment", re.I)
+BAD_TITLE = re.compile(r"not found|404|error|forbidden|access denied|request rejected|blocked|captcha|maintenance|domain .*sale|parked|suspended|index of|attention required|just a moment", re.I)
 
 
 def main() -> int:

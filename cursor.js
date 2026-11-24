@@ -38,6 +38,9 @@
     ["#globe", 2.2, "Drag"],
     [".chart .hit", 1.6, "Jump"],
     [".feed .tilt", 2.0, "Open"],
+    [".wcard", 1.9, "View"],
+    [".srow", 1.8, "Visit"],
+    ["#dice", 1.8, "Roll"],
     [".src .visit", 1.8, "Visit"],
     ["input, select, textarea", 0, ""],
     ["a, button, summary, [role=radio]", 1.7, ""],
@@ -48,7 +51,7 @@
   }
 
   // ---------- magnetic elements ----------
-  const MAG_SEL = ".cta, .play, .tab, .rchip, .burger, .src-links a.visit, .seg button";
+  const MAG_SEL = ".cta, .play, .tab, .rchip, .burger, .src-links a.visit, .seg button, .dice, .drawer-close";
   const mags = new Map(); // el -> {x, y, tx, ty}
 
   // ---------- parallax layers (depth in px at the viewport edge) ----------

@@ -208,6 +208,9 @@
   let yaw = 40, pitch = 12, vYaw = reduced ? 0 : 0.06, vPitch = 0;
   let dragging = false, moved = 0, lastX = 0, lastY = 0, hover = null, idleAt = 0;
   let colors = {};
+  const COUNTRIES = (window.COUNTRIES && window.COUNTRIES.countries) || [];
+  const byIso = Object.fromEntries(COUNTRIES.map((c) => [c.iso3, c]));
+  let selectedIso = null, fly = null;
 
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
@@ -305,8 +308,23 @@
     }
     ctx.globalAlpha = 1;
 
-    // region markers
+    // every country: a pin (filled = verified national authority, ring = WHO page only)
     markers = [];
+    for (const c of COUNTRIES) {
+      const p = rot(...fromLatLon(c.lat, c.lon));
+      if (p[2] <= 0.04) continue;
+      const sx = cx + R * p[0], sy = cy - R * p[1];
+      const key = "c:" + c.iso3, on = hover === key || selectedIso === c.iso3;
+      const r = (c.authorities.length ? 2.6 : 2) * (on ? 1.8 : 1);
+      ctx.globalAlpha = Math.min(1, 0.25 + p[2] * 0.9);
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      if (c.authorities.length) { ctx.fillStyle = colors.sage; ctx.fill(); }
+      else { ctx.strokeStyle = colors.sage; ctx.lineWidth = 1.1; ctx.stroke(); }
+      markers.push({ name: key, x: sx, y: sy, r: 7 });
+    }
+    ctx.globalAlpha = 1;
+
+    // region markers
     const pulse = reduced ? 0 : (now % 2400) / 2400;
     const list = Object.entries(PLACES).map(([name, pl]) => {
       const p = rot(...fromLatLon(pl.lat, pl.lon));
@@ -352,6 +370,29 @@
       markers.push({ name, x: sx, y: sy, r: Math.max(r, 8) + 6 });
     }
 
+    // selected country: beacon + label
+    const sc = selectedIso && byIso[selectedIso];
+    if (sc) {
+      const p = rot(...fromLatLon(sc.lat, sc.lon));
+      if (p[2] > 0.04) {
+        const sx = cx + R * p[0], sy = cy - R * p[1];
+        const beat = reduced ? 0.5 : (now % 1600) / 1600;
+        ctx.strokeStyle = colors.sage; ctx.lineWidth = 2;
+        ctx.globalAlpha = 1 - beat;
+        ctx.beginPath(); ctx.arc(sx, sy, 6 + beat * 22, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = colors.ink;
+        ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.font = `600 ${size < 380 ? 11 : 12.5}px "Plus Jakarta Sans", system-ui, sans-serif`;
+        const tw = ctx.measureText(sc.name).width;
+        ctx.fillStyle = colors.ink;
+        roundRect(sx - tw / 2 - 10, sy - 38, tw + 20, 24, 12); ctx.fill();
+        ctx.fillStyle = colors.core; ctx.textBaseline = "middle"; ctx.textAlign = "center";
+        ctx.fillText(sc.name, sx, sy - 26);
+        ctx.textAlign = "start";
+      }
+    }
+
     if (sat[2] >= 0) drawSatellite(sat, false);
   }
 
@@ -386,7 +427,14 @@
   let visible = false, raf = 0;
   function frame(now) {
     raf = 0;
-    if (!dragging) {
+    if (fly && !dragging) {
+      const t = Math.min(1, (now - fly.t0) / fly.dur);
+      const e = 1 - Math.pow(1 - t, 4);
+      yaw = fly.y0 + (fly.y1 - fly.y0) * e;
+      pitch = fly.p0 + (fly.p1 - fly.p0) * e;
+      vYaw = 0; vPitch = 0; idleAt = now + 5000;
+      if (t >= 1) fly = null;
+    } else if (!dragging) {
       yaw += vYaw; pitch = clampPitch(pitch + vPitch);
       vPitch *= 0.94;
       const auto = reduced ? 0 : 0.06;
@@ -400,6 +448,24 @@
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; start(); }).observe(stage);
   document.addEventListener("visibilitychange", start);
   new ResizeObserver(resize).observe(stage);
+
+  // fly the camera so a lat/lon sits in the centre of the globe
+  function flyTo(lat, lon) {
+    let target = -lon;
+    let d = ((target - yaw) % 360 + 540) % 360 - 180; // shortest way round
+    fly = { y0: yaw, y1: yaw + d, p0: pitch, p1: clampPitch(lat), t0: performance.now(), dur: reduced ? 1 : 1300 };
+    if (reduced) { yaw = fly.y1; pitch = fly.p1; fly = null; }
+    if (!raf) { draw(performance.now()); start(); }
+  }
+  window.FSWGlobe = {
+    flyTo,
+    select(iso) {
+      selectedIso = iso;
+      const c = byIso[iso];
+      if (c) flyTo(c.lat, c.lon);
+      else if (!raf) draw(performance.now());
+    },
+  };
 
   // pointer: drag with inertia, hover tooltips, click to filter
   function hit(x, y) {
@@ -420,6 +486,7 @@
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       moved += Math.abs(dx) + Math.abs(dy);
       [lastX, lastY] = [e.clientX, e.clientY];
+      fly = null;
       yaw += dx * 0.35; pitch = clampPitch(pitch + dy * 0.3);
       vYaw = dx * 0.35; vPitch = dy * 0.3;
       idleAt = performance.now() + 2500;
@@ -431,7 +498,13 @@
     const h = hit(x, y);
     if (h !== hover) { hover = h; if (!raf) draw(performance.now()); }
     canvas.style.cursor = h ? "pointer" : "";
-    if (h) {
+    if (h && h.startsWith("c:")) {
+      const c = byIso[h.slice(2)];
+      const n = c.authorities.length;
+      tip.innerHTML = `<b>${esc(c.name)}</b>${n ? `${n} national authorit${n === 1 ? "y" : "ies"} + WHO` : "WHO country page"}<br><span>Click to open its official sources</span>`;
+      tip.style.left = x + "px"; tip.style.top = y + "px";
+      tip.hidden = false;
+    } else if (h) {
       const n = counts.byRegion[h] || 0;
       tip.innerHTML = liveRegions.has(h)
         ? `<b>${esc(h)}</b>${n} update${n === 1 ? "" : "s"} in this window<br><span>Click to ${state.region === h ? "clear the filter" : "filter the feed"}</span>`
@@ -443,7 +516,11 @@
   const end = (e) => {
     if (!dragging) return;
     dragging = false; canvas.classList.remove("grabbing");
-    if (moved < 6) { const [x, y] = local(e); const h = hit(x, y); if (h) { selectRegion(h); tip.hidden = true; } }
+    if (moved < 6) { const [x, y] = local(e); const h = hit(x, y); if (h) {
+      tip.hidden = true;
+      if (h.startsWith("c:")) document.dispatchEvent(new CustomEvent("fsw:country", { detail: h.slice(2) }));
+      else selectRegion(h);
+    } }
   };
   canvas.addEventListener("pointerup", end);
   canvas.addEventListener("pointercancel", end);
