@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Device check · Food Safety Watch</title>
+  <meta name="description" content="Check that 3D sound, vibration, face tracking, tilt and graphics work on this device before using the 4D globe.">
+  <link rel="icon" href="build/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="device-check.css">
+  <script type="importmap">
+  { "imports": { "@mediapipe/tasks-vision": "./vendor/lib/@mediapipe/tasks-vision/vision_bundle.mjs" } }
+  </script>
+</head>
+<body>
+  <main class="sheet">
+    <header class="intro">
+      <a class="back" href="./#about">Food Safety Watch</a>
+      <h1>Device check</h1>
+      <p>Five quick tests for the 4D globe's sound, vibration, face tracking, tilt and graphics. Each one runs on this device only; nothing is uploaded. When you're done, copy the results and send them over.</p>
+      <div class="tally" aria-live="polite"><strong id="tally">0 of 5 checked</strong><button class="btn ghost" id="copy" type="button">Copy results</button></div>
+    </header>
+
+    <ol class="tests">
+      <!-- 1. Graphics -->
+      <li class="test" id="t-graphics" data-state="pending">
+        <div class="test-head"><h2>Graphics</h2><span class="verdict" aria-live="polite"></span></div>
+        <p class="how">Checks that this device can draw the 4D globe, and how smoothly.</p>
+        <dl class="readout" id="gfx-out"></dl>
+        <div class="actions"><button class="btn" id="gfx-run" type="button">Run graphics check</button><a class="btn ghost" href="./?4d">Open the 4D globe</a></div>
+      </li>
+
+      <!-- 2. Sound -->
+      <li class="test" id="t-sound" data-state="pending">
+        <div class="test-head"><h2>3D sound</h2><span class="verdict" aria-live="polite"></span></div>
+        <p class="how">Wear headphones if you can. A ping travels from your left ear to your right.</p>
+        <div class="sweep" aria-hidden="true"><span class="ear">L</span><i id="sweep-dot"></i><span class="ear">R</span></div>
+        <div class="actions">
+          <button class="btn" id="snd-play" type="button">Play test sound</button>
+        </div>
+        <fieldset class="ask" id="snd-ask" hidden>
+          <legend>What did you hear?</legend>
+          <button class="btn choice" data-verdict="pass" type="button">It moved left to right</button>
+          <button class="btn choice" data-verdict="warn" type="button">Sound, but it didn't move</button>
+          <button class="btn choice" data-verdict="fail" type="button">No sound</button>
+        </fieldset>
+      </li>
+
+      <!-- 3. Vibration -->
+      <li class="test" id="t-vibe" data-state="pending">
+        <div class="test-head"><h2>Vibration</h2><span class="verdict" aria-live="polite"></span></div>
+        <p class="how">Plays the heartbeat the globe uses when you pick a country. Phones only; iPhones and computers can't vibrate from a web page.</p>
+        <div class="actions"><button class="btn" id="vib-run" type="button">Vibrate</button></div>
+        <fieldset class="ask" id="vib-ask" hidden>
+          <legend>Did the phone vibrate twice?</legend>
+          <button class="btn choice" data-verdict="pass" type="button">Yes</button>
+          <button class="btn choice" data-verdict="fail" type="button">No</button>
+        </fieldset>
+      </li>
+
+      <!-- 4. Face tracking -->
+      <li class="test" id="t-face" data-state="pending">
+        <div class="test-head"><h2>Face tracking (Hologram mode)</h2><span class="verdict" aria-live="polite"></span></div>
+        <p class="how">Turns on the camera and finds your face. Move your head left, right, up and down, and lean in. The video stays on this device and the camera turns off when you stop.</p>
+        <div class="face" hidden id="face-box">
+          <div class="frame" aria-hidden="true">
+            <video id="cam" muted playsinline></video>
+            <i class="cross" id="cross"></i>
+          </div>
+          <dl class="readout live">
+            <div><dt>Face</dt><dd id="f-found">searching</dd></div>
+            <div><dt>Left / right</dt><dd id="f-x">0.00</dd></div>
+            <div><dt>Up / down</dt><dd id="f-y">0.00</dd></div>
+            <div><dt>Distance</dt><dd><span class="bar"><span id="f-zbar"></span></span><span id="f-z">1.00</span></dd></div>
+          </dl>
+        </div>
+        <div class="actions"><button class="btn" id="face-run" type="button">Start camera</button></div>
+      </li>
+
+      <!-- 5. Motion -->
+      <li class="test" id="t-motion" data-state="pending">
+        <div class="test-head"><h2>Tilt and shake</h2><span class="verdict" aria-live="polite"></span></div>
+        <p class="how">Phones and tablets: tilt the device to steer the dot, then give it a shake.</p>
+        <div class="tilt" hidden id="tilt-box" aria-hidden="true"><i id="tilt-dot"></i></div>
+        <p class="live-note" id="shake-note" hidden>Shakes detected: <strong id="shakes">0</strong></p>
+        <div class="actions"><button class="btn" id="mot-run" type="button">Allow motion sensors</button></div>
+      </li>
+    </ol>
+
+    <footer class="foot">
+      <p>Results stay in this page until you copy them. Close the tab to clear everything.</p>
+    </footer>
+  </main>
+  <script type="module" src="device-check.js"></script>
+</body>
+</html>

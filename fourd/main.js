@@ -16,8 +16,9 @@ import { loadCrises, refreshLive, buildTrends, Beacons, Arcs, GROUPS } from "./c
 import { HeadTracker, MotionInput } from "./sensors.js";
 import { SpatialAudio } from "./audio.js";
 import { createHud, renderCountry } from "./hud.js";
-import { latLonToVec3, subsolarPoint, haptics, clamp, lerp, esc, DAY_MS } from "./util.js";
-import { detectTier, BUDGET } from "./gpu.js";
+import { latLonToVec3, subsolarPoint, clamp, lerp, esc, DAY_MS } from "./util.js";
+import { haptics } from "./haptics.js";
+import { detectTier, BUDGET, shortGpuName } from "./gpu.js";
 import { Tour } from "./tour.js";
 
 // Spacetime lens + chromatic aberration + vignette (runs after bloom)
@@ -99,9 +100,9 @@ export async function mount({ onExit, audioCtx }) {
     return { dispose() { root.remove(); document.documentElement.classList.remove("fourd-open"); ac.abort(); } };
   }
   const { tier, gpu } = detectTier(renderer);
-  const B = BUDGET[tier];
-  const maxPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2, B.maxPR);
-  let pr = Math.min(maxPR, tier === "low" ? 0.85 : 1.5);
+  const budget = BUDGET[tier];
+  const maxPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2, budget.maxPR);
+  let pr = Math.min(maxPR, budget.startPR);
   renderer.info.autoReset = false; // count every pass of a frame (draw-call budget)
   progress("Starting the renderer…", 0, 6, 1);
   renderer.setPixelRatio(pr);
@@ -139,21 +140,21 @@ export async function mount({ onExit, audioCtx }) {
   // ---------------------------------------------------------------- content
   progress("Downloading country borders…", 6, 55);
   const world = await loadWorld("data/world-50m.json", {
-    hiRes: B.hiRes && !mobile && renderer.capabilities.maxTextureSize >= 4096,
+    hiRes: budget.hiRes && !mobile && renderer.capabilities.maxTextureSize >= 4096,
     onProgress: (f) => progress("Downloading country borders…", 6, 55, f),
   });
   progress("Drawing 241 borders into textures…", 55, 72, 1);
   await new Promise((r) => setTimeout(r, 0));
-  const globe = new Globe(world, { anisotropy: renderer.capabilities.getMaxAnisotropy(), globeSeg: B.globeSeg, cloudSeg: B.cloudSeg });
+  const globe = new Globe(world, { anisotropy: renderer.capabilities.getMaxAnisotropy(), globeSeg: budget.globeSeg, cloudSeg: budget.cloudSeg });
   const earth = new THREE.Group();
   earth.add(globe.group);
   scene.add(earth);
 
   const tesseract = new Tesseract();
   scene.add(tesseract.group);
-  const fabric = new Fabric(B.fabricSeg);
+  const fabric = new Fabric(budget.fabricSeg);
   scene.add(fabric.mesh);
-  const stars = makeStars(mobile ? Math.min(2500, B.stars) : B.stars);
+  const stars = makeStars(mobile ? Math.min(2500, budget.stars) : budget.stars);
   scene.add(stars);
 
   const beacons = new Beacons();
@@ -335,9 +336,12 @@ export async function mount({ onExit, audioCtx }) {
     ui.sr.textContent = `Selected ${countryMeta[c.iso3]?.name || c.name}. Details are in the country panel.`;
   }
 
-  function deselect() {
+  function clearSelection() {
     st.select = -1; globe.uniforms.uSelect.value = -1;
     ui.panel.hidden = true; arcs.clear();
+  }
+  function deselect() {
+    clearSelection();
     controls.autoRotate = !reduced;
   }
 
@@ -507,11 +511,11 @@ export async function mount({ onExit, audioCtx }) {
   }
 
   // ---------------------------------------------------------------- quality / resize
-  let bokehOn = B.bokeh && !mobile;
+  let bokehOn = budget.bokeh && !mobile;
   function applyQuality(force) {
     if (st.quality === "high") { pr = maxPR; bokehOn = true; bloom.strength = 0.9; }
     else if (st.quality === "low") { pr = Math.min(maxPR, 0.8); bokehOn = false; bloom.strength = 0.7; }
-    else if (force) { pr = Math.min(maxPR, tier === "low" ? 0.85 : 1.5); bokehOn = B.bokeh && !mobile; bloom.strength = tier === "low" ? 0.7 : 0.85; }
+    else if (force) { pr = Math.min(maxPR, budget.startPR); bokehOn = budget.bokeh && !mobile; bloom.strength = budget.bloom; }
     bokeh.enabled = bokehOn;
     renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
     resize();
@@ -552,17 +556,15 @@ export async function mount({ onExit, audioCtx }) {
 
   // ---------------------------------------------------------------- staged data stream (after first frame)
   ui.status.textContent = "Loading food-safety data…";
+  // everything computed from the event store (trends, W-axis layers, beacons)
+  function refreshDerived() { trends = buildTrends(store, nowReal()); applyLayers(); rebuildBeacons(true); }
   function streamData() {
     loadCrises(countryMeta, { signal }).then((snap) => {
       Object.assign(store, snap);
-      trends = buildTrends(store, nowReal());
-      applyLayers();
-      rebuildBeacons(true);
+      refreshDerived();
       ui.status.textContent = `Saved food-safety snapshot ${new Date(store.generated).toLocaleDateString()} · checking for live updates…`;
       return refreshLive(store, countryMeta, { signal }).then((n) => {
-        trends = buildTrends(store, nowReal());
-        applyLayers();
-        rebuildBeacons(true);
+        refreshDerived();
         ui.status.textContent = `${store.liveStatus === "live" ? `Live FDA & WHO data · ${n} new` : "Live update unavailable · using saved snapshot"} · snapshot ${new Date(store.generated).toLocaleDateString()}`;
       });
     }).catch((err) => { if (!signal.aborted) ui.status.textContent = "Couldn't load food-safety data: " + (err.message || err); });
@@ -575,10 +577,11 @@ export async function mount({ onExit, audioCtx }) {
   let findResults = [], findActive = -1;
   function renderFind() {
     ui.findList.innerHTML = findResults.map((r, i) => `<li role="option" id="fd-opt-${r.idx}" data-idx="${r.idx}" aria-selected="${i === findActive}">${esc(r.name)}<small>${esc(r.iso)}</small></li>`).join("")
-      || (ui.find.value.trim() ? '<li class="none">No match</li>' : "");
+      || (ui.find.value.trim() ? '<li class="none" role="option" aria-disabled="true">No match</li>' : "");
     ui.findList.hidden = !ui.find.value.trim();
     ui.find.setAttribute("aria-expanded", String(!ui.findList.hidden));
-    ui.find.setAttribute("aria-activedescendant", findActive >= 0 ? `fd-opt-${findResults[findActive].idx}` : "");
+    if (findActive >= 0) ui.find.setAttribute("aria-activedescendant", `fd-opt-${findResults[findActive].idx}`);
+    else ui.find.removeAttribute("aria-activedescendant");
   }
   ui.find.addEventListener("input", () => {
     const q = norm(ui.find.value.trim());
@@ -598,11 +601,11 @@ export async function mount({ onExit, audioCtx }) {
   // ---------------------------------------------------------------- first-visit hints (contextual cues)
   let hintTimer = 0;
   function dismissHints() {
-    if (ui.hints.hidden) return;
-    ui.hints.classList.add("bye");
-    setTimeout(() => { ui.hints.hidden = true; }, reduced ? 0 : 450);
-    try { localStorage.setItem("fsw4d-hints", "1"); } catch { /* private mode */ }
+    if (ui.hints.hidden || ui.hints.classList.contains("bye")) return;
     clearTimeout(hintTimer);
+    ui.hints.classList.add("bye");
+    hintTimer = setTimeout(() => { ui.hints.hidden = true; }, reduced ? 0 : 450);
+    try { localStorage.setItem("fsw4d-hints", "1"); } catch { /* private mode */ }
   }
   try { if (!localStorage.getItem("fsw4d-hints")) { ui.hints.hidden = false; hintTimer = setTimeout(dismissHints, 12000); } } catch { ui.hints.hidden = false; }
 
@@ -645,7 +648,7 @@ export async function mount({ onExit, audioCtx }) {
           if (c.iso) {
             const idx = world.countries.findIndex((w) => w.iso3 === c.iso);
             if (idx >= 0) { st.select = idx; globe.uniforms.uSelect.value = idx; openPanel(idx, true); }
-          } else if (st.select >= 0) { st.select = -1; globe.uniforms.uSelect.value = -1; ui.panel.hidden = true; arcs.clear(); }
+          } else if (st.select >= 0) clearSelection();
         },
       });
       controls.enabled = false; controls.autoRotate = false;
@@ -762,8 +765,11 @@ export async function mount({ onExit, audioCtx }) {
 
     if (debugOn && (qualityTimer > 0.5 || qualityTimer < dt)) {
       const i = renderer.info.render;
-      ui.debug.textContent = `${(1000 / frameEMA).toFixed(0)} fps · ${frameEMA.toFixed(1)} ms · ${i.calls} draw calls · ${(i.triangles / 1000).toFixed(0)}k tris · DPR ${pr.toFixed(2)} · tier ${tier} · ${gpu.replace(/^ANGLE \(|\)$/g, "").slice(0, 48)}`;
+      ui.debug.textContent = `${(1000 / frameEMA).toFixed(0)} fps · ${frameEMA.toFixed(1)} ms · ${i.calls} draw calls · ${(i.triangles / 1000).toFixed(0)}k tris · DPR ${pr.toFixed(2)} · tier ${tier} · ${shortGpuName(gpu, 48)}`;
     }
+
+    // draw-call budget: if a frame ever exceeds 100 calls, drop the most expensive pass (depth of field)
+    if (renderer.info.render.calls > 100 && bokeh.enabled) { bokehOn = false; bokeh.enabled = false; }
 
     // adaptive quality: aim for 60 fps
     if (st.quality === "auto" && (qualityTimer += dt) > 1) {

@@ -52,8 +52,9 @@ export async function loadCrises(countryMeta, { signal }) {
     if (!iso || !countryMeta[iso]) continue;
     const text = `${f.title} ${f.summary}`;
     // UN news is broad (hunger, nutrition…): keep it only when it names a food-safety hazard
-    if (f.region === "Global (UN)" && !classify(text)) continue;
-    const group = classify(text) === "contamination" ? "contamination" : f.category === "Recall" ? "recall" : f.region === "Global (UN)" ? classify(text) : "alert";
+    const unNews = f.source === "who-news" || f.source === "fao-news";
+    if (unNews && !classify(text)) continue;
+    const group = classify(text) === "contamination" ? "contamination" : f.category === "Recall" ? "recall" : unNews ? classify(text) : "alert";
     const c = countryMeta[iso], spread = iso === "USA" ? [16, 40] : iso === "CAN" ? [6, 30] : [3, 3];
     const center = iso === "USA" ? [39, -98] : iso === "CAN" ? [50, -95] : [c.lat, c.lon];
     events.push(mkEvent({

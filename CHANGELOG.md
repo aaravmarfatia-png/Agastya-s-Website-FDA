@@ -2,6 +2,18 @@
 
 What's new on Food Safety Watch, newest first.
 
+## November 26, 2026 (later): Device check
+
+### ✨ New
+- **Device check page.** Linked from About. It tests 3D sound, vibration, webcam face tracking, tilt and graphics on your own device in about a minute, then copies a summary you can send. It uses the 4D globe's real code, so if it works here, it works in the globe.
+
+### 🔧 Improvements
+- The globe's frame budget now protects itself: if a frame ever needs more than 100 draw calls, depth of field switches off.
+- Screen readers no longer announce a selected country twice, and the trend chart's label now says "food-safety records".
+
+### 🐛 Fixes
+- The 4D globe now applies the food-hazard check to WHO and FAO news by source, so no non-food story can slip through.
+
 ## November 26, 2026: The 4D globe, finished
 
 ### ✨ New

@@ -28,7 +28,7 @@ async function enter() {
   // It stays silent until "Enable 4D audio" is pressed.
   try { if (!audioCtx || audioCtx.state === "closed") { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); audioCtx.suspend(); } } catch { audioCtx = null; }
   if (location.protocol === "file:") {
-    toast("4D mode needs the local web server. Run: python3 -m http.server 8000, then open http://localhost:8000");
+    toast("4D mode needs the local web server. Run: npm run serve, then open http://localhost:8000");
     return;
   }
   busy = true;

@@ -32,6 +32,9 @@ then visit http://localhost:8000. To refresh every morning at 7am, add this with
 | `explore.js` | The 3D globe (every country is a pin), the 60-day timeline with play button, and 3D card tilt. |
 | `countries-ui.js` | Country search, "surprise me", the slide-in country panel and the "Every country" directory. |
 | `cursor.js` | Mouse effects: cursor follower, spotlight, magnetic buttons, parallax. |
+| `device-check.html`, `.css`, `.js` | Device check page: tests 3D sound, vibration, webcam face tracking, tilt and graphics on the visitor's own device, then copies a summary to send. Uses the 4D globe's real modules. |
+| `fourd/` | The 4D globe: `main.js` (orchestrator), `globe.js`, `lattice.js`, `crises.js`, `hud.js`, `tour.js`, `sensors.js`, `audio.js`, `haptics.js`, `gpu.js` (device tiers), `launch.js`, `util.js`. |
+| `scripts/` | `serve.mjs` (local server), `vendor-libs.mjs` (copies libraries into `vendor/lib`), `build-world.mjs` (country borders). |
 
 ## Sources
 
@@ -63,7 +66,7 @@ node scripts/build-world.mjs    # data/world-50m.json: country borders tagged wi
 python3 fetch_crises.py         # data/crises.json: food-safety issues per country
 npm run serve                   # local server on http://localhost:8000
 ```
-Use `npm run serve` rather than `python3 -m http.server`: Python's server only queues 5 connections and drops some of the ~60 files the 4D globe loads at once. The site loads these packages straight from `node_modules` through an import map in `index.html`, so there's no build step. If you host the site, upload `node_modules` along with it, or copy across the files the import map points to.
+Use `npm run serve` rather than `python3 -m http.server`: Python's server only queues 5 connections and drops some of the ~60 files the 4D globe loads at once. There's no build step: `npm run vendor` copies just the library files the 4D globe uses from `node_modules` into `vendor/lib/` (committed), and the import maps in `index.html` and `device-check.html` point there. So any static host, GitHub Pages included, works without `node_modules`.
 
 **What's in it:**
 

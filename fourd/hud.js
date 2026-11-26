@@ -28,7 +28,7 @@ export function createHud(root, { motionSupported, touch }) {
       <ul id="fd-find-list" class="fd-find-list" role="listbox" hidden></ul>
     </div>
 
-    <aside class="fd-panel fd-glass" hidden aria-live="polite"></aside>
+    <aside class="fd-panel fd-glass" hidden aria-label="Country details"></aside>
 
     <section class="fd-tour fd-glass" hidden aria-live="polite" aria-label="Guided tour">
       <div class="fd-tour-step"></div>
@@ -45,8 +45,8 @@ export function createHud(root, { motionSupported, touch }) {
 
     <div class="fd-hints fd-glass" hidden role="note" aria-label="How to explore">
       ${touch
-        ? `<span><svg viewBox="0 0 24 24"><path d="M12 3v10m0 0-3-3m3 3 3-3M6 13a6 6 0 0 0 12 0"/></svg>Drag to orbit</span><span><svg viewBox="0 0 24 24"><path d="M7 7l-3-3m0 0v4m0-4h4M17 17l3 3m0 0v-4m0 4h-4"/></svg>Pinch to zoom</span><span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Tap a country</span>`
-        : `<span><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="5"/><path d="M12 7v3"/></svg>Drag to orbit · scroll to zoom</span><span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Click a country</span><span><kbd>Shift</kbd>+scroll: W-axis</span><span><kbd>T</kbd> guided tour</span>`}
+        ? `<span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10m0 0-3-3m3 3 3-3M6 13a6 6 0 0 0 12 0"/></svg>Drag to orbit</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l-3-3m0 0v4m0-4h4M17 17l3 3m0 0v-4m0 4h-4"/></svg>Pinch to zoom</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Tap a country</span>`
+        : `<span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="5"/><path d="M12 7v3"/></svg>Drag to orbit · scroll to zoom</span><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Click a country</span><span><kbd>Shift</kbd>+scroll: W-axis</span><span><kbd>T</kbd> guided tour</span>`}
       <button class="fd-btn fd-round" data-act="hints-close" aria-label="Dismiss tips">✕</button>
     </div>
 
@@ -121,7 +121,7 @@ export function renderCountry(el, { name, iso3, meta, active, history, trend, si
     const proj = Math.max(0, trend.mean + trend.slope * (4.5 + Math.max(0, yearsAhead)));
     const dir = trend.slope > 0.05 ? "rising" : trend.slope < -0.05 ? "falling" : "flat";
     trendHtml = `<section><h3>Food-safety records per year</h3>
-      <div class="fd-spark" role="img" aria-label="Disasters per year ${trend.firstYear} to ${trend.firstYear + 9}: ${trend.counts.join(", ")}">
+      <div class="fd-spark" role="img" aria-label="Food-safety records per year ${trend.firstYear} to ${trend.firstYear + 9}: ${trend.counts.join(", ")}">
         ${trend.counts.map((c, i) => `<span style="--h:${(c / max) * 100}%" title="${trend.firstYear + i}: ${c}"></span>`).join("")}
         ${future ? `<span class="ghost" style="--h:${Math.min(100, (proj / max) * 100)}%" title="Trend value for ${new Date(simMs).getUTCFullYear()}: ${proj.toFixed(1)}"></span>` : ""}
       </div>

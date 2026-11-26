@@ -27,7 +27,10 @@ export function detectTier(renderer) {
 
 // Per-tier scene budget
 export const BUDGET = {
-  low: { globeSeg: [192, 96], cloudSeg: [64, 32], fabricSeg: 110, stars: 1500, bokeh: false, maxPR: 1, hiRes: false, clouds: true },
-  mid: { globeSeg: [320, 160], cloudSeg: [96, 48], fabricSeg: 180, stars: 3500, bokeh: true, maxPR: 1.5, hiRes: true, clouds: true },
-  high: { globeSeg: [384, 192], cloudSeg: [128, 64], fabricSeg: 240, stars: 5000, bokeh: true, maxPR: 2, hiRes: true, clouds: true },
+  low: { globeSeg: [192, 96], cloudSeg: [64, 32], fabricSeg: 110, stars: 1500, bokeh: false, maxPR: 1, startPR: 0.85, bloom: 0.7, hiRes: false },
+  mid: { globeSeg: [320, 160], cloudSeg: [96, 48], fabricSeg: 180, stars: 3500, bokeh: true, maxPR: 1.5, startPR: 1.5, bloom: 0.85, hiRes: true },
+  high: { globeSeg: [384, 192], cloudSeg: [128, 64], fabricSeg: 240, stars: 5000, bokeh: true, maxPR: 2, startPR: 1.5, bloom: 0.85, hiRes: true },
 };
+
+/** Readable GPU name ("ANGLE (Apple, Apple M2, …)" -> "Apple, Apple M2, …") */
+export const shortGpuName = (name, max = 60) => String(name).replace(/^ANGLE \(|\)$/g, "").slice(0, max);
