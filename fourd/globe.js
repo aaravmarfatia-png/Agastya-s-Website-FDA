@@ -57,8 +57,25 @@ function centroid(geom) {
   return { lat, lon };
 }
 
-export async function loadWorld(url, { hiRes }) {
-  const topo = await (await fetch(url)).json();
+/** fetch JSON while reporting download progress (0..1) for the preloader */
+async function fetchJsonProgress(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const total = +res.headers.get("content-length") || 0;
+  if (!res.body || !total || !onProgress) return res.json();
+  const reader = res.body.getReader(), chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    onProgress(Math.min(1, got / total));
+  }
+  return JSON.parse(new TextDecoder().decode(await new Blob(chunks).arrayBuffer()));
+}
+
+export async function loadWorld(url, { hiRes, onProgress }) {
+  const topo = await fetchJsonProgress(url, onProgress);
   const fc = feature(topo, topo.objects.countries);
   const countries = fc.features.slice(0, MAX_IDS - 1).map((f, i) => ({
     index: i, iso3: f.properties.iso3, name: f.properties.name, feature: f, centroid: centroid(f.geometry),
@@ -250,7 +267,7 @@ void main(){
 
 // ------------------------------------------------------------------ Globe
 export class Globe {
-  constructor(world, { anisotropy }) {
+  constructor(world, { anisotropy, globeSeg = [384, 192], cloudSeg = [128, 64] }) {
     this.world = world;
     this.group = new THREE.Group();
 
@@ -275,14 +292,14 @@ export class Globe {
     this.shockSlot = 0;
 
     this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 384, 192),
+      new THREE.SphereGeometry(1, globeSeg[0], globeSeg[1]),
       new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: globeVert, fragmentShader: globeFrag }),
     );
     this.group.add(this.mesh);
 
     this.cloudUniforms = { uSun: this.uniforms.uSun, uTime: this.uniforms.uTime, uW: this.uniforms.uW };
     this.clouds = new THREE.Mesh(
-      new THREE.SphereGeometry(1.014, 128, 64),
+      new THREE.SphereGeometry(1.014, cloudSeg[0], cloudSeg[1]),
       new THREE.ShaderMaterial({ uniforms: this.cloudUniforms, vertexShader: cloudVert, fragmentShader: cloudFrag, transparent: true, depthWrite: false }),
     );
     this.group.add(this.clouds);

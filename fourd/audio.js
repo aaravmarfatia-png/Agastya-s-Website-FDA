@@ -4,10 +4,12 @@
 export class SpatialAudio {
   constructor() { this.ctx = null; this.on = false; }
 
-  async start() {
+  /** ctx: an AudioContext created during the user's click that opened 4D (avoids autoplay blocks) */
+  async start(ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC();
-    const ctx = this.ctx;
+    this.ctx = ctx && ctx.state !== "closed" ? ctx : new AC();
+    ctx = this.ctx;
+    if (ctx.state === "suspended") await ctx.resume();
     this.master = ctx.createGain();
     this.master.gain.value = 0;
     const comp = ctx.createDynamicsCompressor();
@@ -76,6 +78,17 @@ export class SpatialAudio {
     const p = this.panner(); this.setPos(p, dir.x * 2, dir.y * 2, dir.z * 2);
     o.connect(g).connect(p).connect(this.master);
     o.start(t); o.stop(t + 0.65);
+  }
+
+  /** UI foley: a soft, short click for buttons and toggles (not spatialised) */
+  click(on = true) {
+    if (!this.on) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = "triangle";
+    o.frequency.setValueAtTime(on ? 1400 : 900, t); o.frequency.exponentialRampToValueAtTime(on ? 2100 : 600, t + 0.05);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.06, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    o.connect(g).connect(this.master); o.start(t); o.stop(t + 0.1);
   }
 
   /** shockwave: filtered noise sweep + sub thump */

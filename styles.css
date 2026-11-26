@@ -805,3 +805,102 @@ html.fourd-open .cursor-ring, html.fourd-open .cursor-dot, html.fourd-open .spot
 }
 .fourd [hidden] { display: none !important; }
 .fd-ev-detail { font-size: 12px; color: var(--fd-ink2); line-height: 1.4; }
+
+/* ---------- 4D: interactive preloader ---------- */
+.fd-loading { transition: opacity .6s var(--out); }
+.fd-loading.done { opacity: 0; pointer-events: none; }
+.fd-pre-cube { position: relative; width: 64px; height: 64px; margin: 0 auto 6px; perspective: 300px; }
+.fd-pre-cube i { position: absolute; inset: 0; border: 1.5px solid var(--fd-accent); border-radius: 6px; animation: fd-cube 3.2s cubic-bezier(.45,0,.55,1) infinite; }
+.fd-pre-cube i + i { inset: 16px; border-color: #8fb7ff; animation-direction: reverse; animation-duration: 2.4s; }
+@keyframes fd-cube { 0% { transform: rotateX(0) rotateY(0); } 50% { transform: rotateX(180deg) rotateY(90deg) scale(.8); } 100% { transform: rotateX(360deg) rotateY(180deg); } }
+.fd-pre-bar { width: min(320px, 70vw); height: 3px; margin: 0 auto; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+.fd-pre-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--fd-accent), #8fb7ff); transform: scaleX(0); transform-origin: left; transition: transform .35s var(--out); }
+.fd-pre-stage { color: var(--fd-ink); font-weight: 600; }
+.fd-pre-pct { font-family: var(--serif); font-size: 28px; color: var(--fd-ink); font-variant-numeric: tabular-nums; margin: -6px 0 0 !important; }
+.fd-pre-tip { font-size: 12.5px; color: var(--fd-ink3); max-width: 360px; margin: 6px auto 0 !important; }
+.fourd kbd { font: 600 11px var(--sans); padding: 1px 6px; border-radius: 5px; background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 1px var(--fd-line); color: var(--fd-ink); }
+
+/* ---------- 4D: overlay never blocks the canvas except on real controls ---------- */
+.fd-hud { position: absolute; inset: 0; pointer-events: none; }
+.fd-hud > * { pointer-events: auto; }
+.fd-hud > .fd-tip, .fd-hud > .fd-status, .fd-hud > .fd-debug, .fd-hud > .fd-sr { pointer-events: none; }
+
+/* ---------- 4D: finder ---------- */
+.fd-finder { position: absolute; left: 16px; top: 84px; width: min(320px, calc(100vw - 32px)); display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 999px; z-index: 2; }
+.fd-finder svg { width: 15px; height: 15px; fill: none; stroke: var(--fd-ink3); stroke-width: 1.4; flex: none; }
+.fd-finder input { flex: 1; border: 0; outline: 0; background: none; color: var(--fd-ink); font: 14px var(--sans); padding: 10px 0; }
+.fd-finder input::placeholder { color: var(--fd-ink3); }
+.fd-finder:focus-within { box-shadow: inset 0 0 0 1.5px var(--fd-accent); }
+.fd-find-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); margin: 0; padding: 6px; list-style: none; border-radius: 16px; background: rgba(6, 14, 20, .96); box-shadow: inset 0 0 0 1px var(--fd-line), 0 20px 40px -16px #000; }
+.fd-find-list li { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 10px; cursor: pointer; font-size: 14px; }
+.fd-find-list li small { color: var(--fd-ink3); font-size: 11px; letter-spacing: .12em; }
+.fd-find-list li[aria-selected="true"], .fd-find-list li:hover { background: rgba(127,227,207,.14); }
+.fd-find-list li.none { color: var(--fd-ink3); cursor: default; }
+.fd-panel { top: 140px; }
+
+/* ---------- 4D: guided tour ---------- */
+.fd-tour { position: absolute; left: 50%; bottom: 138px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); padding: 18px 22px 14px; text-align: center; animation: fd-panel .7s var(--out); }
+.fd-tour-step { font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--fd-accent); font-weight: 700; }
+.fd-tour-title { margin: 6px 0 4px; font-family: var(--serif); font-weight: 400; font-size: clamp(24px, 3vw, 32px); line-height: 1.1; }
+.fd-tour-text { margin: 0 auto; max-width: 48ch; color: var(--fd-ink2); font-size: 14px; }
+.fd-tour-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 12px; }
+.fd-tour-dots { display: flex; gap: 6px; list-style: none; margin: 0 4px; padding: 0; }
+.fd-tour-dots li { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.25); transition: transform .4s var(--spring), background-color .4s; }
+.fd-tour-dots li.on { background: var(--fd-accent); transform: scale(1.5); }
+.fd-tour-hint { margin: 8px 0 0; font-size: 11.5px; color: var(--fd-ink3); }
+.fd-tour:not([hidden]) ~ .fd-legend { opacity: .35; }
+
+/* ---------- 4D: first-visit hints ---------- */
+.fd-hints { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; padding: 8px 8px 8px 18px; font-size: 13px; color: var(--fd-ink2); white-space: nowrap; animation: fd-hint-in .8s var(--out) .4s both; }
+.fd-hints span { display: inline-flex; align-items: center; gap: 7px; }
+.fd-hints svg { width: 16px; height: 16px; fill: none; stroke: var(--fd-accent); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.fd-hints .fd-round { width: 30px; height: 30px; }
+.fd-hints.bye { opacity: 0; transform: translate(-50%, -8px); transition: opacity .45s, transform .45s var(--out); }
+@keyframes fd-hint-in { from { opacity: 0; transform: translate(-50%, 10px); } }
+.fd-hints:not([hidden]) ~ .fd-status { opacity: 0; }
+
+/* ---------- 4D: frame budget readout (?debug or ` key) ---------- */
+.fd-debug { position: absolute; left: 16px; bottom: 132px; padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.6); font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #9fe8d4; max-width: 60vw; }
+
+/* ---------- 4D entry when WebGL 2 is missing ---------- */
+[data-enter-4d][aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 860px) {
+  .fd-finder { top: auto; bottom: 150px; left: 8px; width: calc(100vw - 120px); }
+  .fd-panel { top: auto; }
+  .fd-hints { top: auto; bottom: 210px; white-space: normal; flex-wrap: wrap; justify-content: center; width: calc(100vw - 32px); }
+  .fd-tour { bottom: 150px; }
+  .fd-hud:has(.fd-tour:not([hidden])) .fd-finder { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fd-pre-cube i { animation: none; }
+  .fd-hints, .fd-tour { animation: none; }
+}
+
+/* ---------- 4D: phone layout (stacked, nothing overlapping) ---------- */
+.fd-ticks .sm, .fd-w-layers .sm { display: none; }
+@media (max-width: 860px) {
+  .fd-ticks .lg, .fd-w-layers .lg { display: none; }
+  .fd-ticks .sm, .fd-w-layers .sm { display: inline; }
+  .fd-top { left: 8px; right: 8px; top: 8px; padding: 6px 8px; }
+  .fd-finder { top: 128px; bottom: auto; left: 8px; right: 8px; width: auto; }
+  .fd-hints, .fd-debug { top: 178px; bottom: auto; left: 8px; right: 8px; width: auto; transform: none; }
+  .fd-hints { justify-content: flex-start; gap: 6px 14px; padding: 8px 8px 8px 14px; font-size: 12.5px; }
+  .fd-hints.bye { transform: translateY(-8px); }
+  @keyframes fd-hint-in { from { opacity: 0; transform: translateY(10px); } }
+  .fd-status { top: 172px; }
+  /* W-axis becomes a horizontal strip above the time bar */
+  .fd-w { top: auto; right: 8px; left: 8px; bottom: 178px; height: auto; transform: none; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 2px 12px; padding: 8px 14px; border-radius: 18px; }
+  .fd-w-title { grid-column: 1; grid-row: 1 / 3; align-self: center; }
+  #fd-w-range { writing-mode: horizontal-tb; direction: ltr; width: 100%; height: 22px; grid-column: 2; cursor: ew-resize; }
+  .fd-w-layers { grid-column: 2; flex-direction: row-reverse; max-width: none; font-size: 11px; gap: 6px; }
+  .fd-time { padding: 8px 12px 10px; }
+  .fd-time-row { flex-wrap: wrap; gap: 6px; }
+  .fd-round { width: 34px; height: 34px; }
+  .fd-readout { order: 5; width: 100%; margin: 2px 0 0; gap: 8px; }
+  .fd-date { font-size: 15px; }
+  .fd-live { margin-left: auto; }
+  .fd-panel, .fd-tour { bottom: 252px; left: 8px; right: 8px; width: auto; transform: none; max-height: calc(100dvh - 380px); overflow: auto; }
+  .fd-hud:has(.fd-tour:not([hidden])) .fd-w, .fd-hud:has(.fd-panel:not([hidden])) .fd-legend { display: none; }
+  .fd-hud:has(.fd-tour:not([hidden])) .fd-tour { bottom: 178px; }
+}

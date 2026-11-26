@@ -42,8 +42,11 @@ export async function loadCrises(countryMeta, { signal }) {
 
   // recalls & alerts from the national feeds the site already collects (data/feed.js)
   const names = Object.values(countryMeta).sort((a, b) => b.name.length - a.name.length);
+  // only the site's food feeds: CPSC / Health Canada product recalls and FDA's mixed drug & device feed are
+  // consumer-protection items, not food safety, so they stay on the main site but not on the globe
+  const FOOD_FEEDS = new Set(["fda-food-recalls", "fda-allergies", "cdc-food-safety", "uk-fsa-alerts", "cfia-recalls", "who-news", "fao-news"]);
   for (const f of (window.FEED_DATA && window.FEED_DATA.items) || []) {
-    if (!f.date) continue;
+    if (!f.date || !FOOD_FEEDS.has(f.source)) continue;
     let iso = FEED_REGION[f.region];
     if (!iso && f.region === "Global (UN)") iso = names.find((c) => f.title.includes(c.name))?.iso3;
     if (!iso || !countryMeta[iso]) continue;

@@ -441,9 +441,12 @@
       if (now > idleAt) vYaw += (auto - vYaw) * 0.03; else vYaw *= 0.95;
     }
     draw(now);
-    if (visible && !document.hidden) raf = requestAnimationFrame(frame);
+    if (visible && !document.hidden && !covered()) raf = requestAnimationFrame(frame);
   }
-  const start = () => { if (!raf && visible) raf = requestAnimationFrame(frame); };
+  // the 2D globe sleeps while the full-screen 4D mode covers it
+  const covered = () => document.documentElement.classList.contains("fourd-open");
+  const start = () => { if (!raf && visible && !covered()) raf = requestAnimationFrame(frame); };
+  new MutationObserver(() => start()).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   const clampPitch = (p) => Math.max(-55, Math.min(65, p));
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; start(); }).observe(stage);
   document.addEventListener("visibilitychange", start);

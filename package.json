@@ -5,7 +5,7 @@
   "description": "Food safety & consumer protection updates from government and UN sources, with a 4D globe.",
   "type": "module",
   "scripts": {
-    "serve": "python3 -m http.server 8000",
+    "serve": "node scripts/serve.mjs",
     "build:world": "node scripts/build-world.mjs",
     "data": "python3 fetch_feeds.py && python3 fetch_crises.py",
     "dist:win": "node scripts/vendor-libs.mjs && electron-builder --win --x64",

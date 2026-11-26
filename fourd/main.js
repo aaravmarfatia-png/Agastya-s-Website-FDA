@@ -17,6 +17,8 @@ import { HeadTracker, MotionInput } from "./sensors.js";
 import { SpatialAudio } from "./audio.js";
 import { createHud, renderCountry } from "./hud.js";
 import { latLonToVec3, subsolarPoint, haptics, clamp, lerp, esc, DAY_MS } from "./util.js";
+import { detectTier, BUDGET } from "./gpu.js";
+import { Tour } from "./tour.js";
 
 // Spacetime lens + chromatic aberration + vignette (runs after bloom)
 const LensShader = {
@@ -58,7 +60,7 @@ const LensShader = {
 
 const YEAR = 365.25 * DAY_MS;
 
-export async function mount({ onExit }) {
+export async function mount({ onExit, audioCtx }) {
   const ac = new AbortController();
   const { signal } = ac;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -70,11 +72,24 @@ export async function mount({ onExit }) {
   root.className = "fourd";
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-label", "4D globe");
-  root.innerHTML = `<div class="fd-loading"><div class="fd-spinner"></div><p>Building the 4D globe…</p></div>`;
+  root.innerHTML = `<div class="fd-loading">
+      <div class="fd-pre-cube" aria-hidden="true"><i></i><i></i></div>
+      <div class="fd-pre-bar" role="progressbar" aria-label="Loading the 4D globe" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+      <p class="fd-pre-stage">Starting the renderer…</p>
+      <p class="fd-pre-pct">0%</p>
+      <p class="fd-pre-tip">Tip: hold <kbd>Shift</kbd> and scroll to move along the W-axis, or press <kbd>T</kbd> for a guided tour.</p>
+    </div>`;
   document.body.appendChild(root);
   document.documentElement.classList.add("fourd-open");
   const loading = root.querySelector(".fd-loading");
-  const say = (t) => { const p = loading.querySelector("p"); if (p) p.textContent = t; };
+  // staged progress: each stage owns a slice of the bar
+  const progress = (stage, from, to, f = 0) => {
+    const pct = Math.round(from + (to - from) * Math.min(1, f));
+    loading.querySelector(".fd-pre-stage").textContent = stage;
+    loading.querySelector(".fd-pre-pct").textContent = pct + "%";
+    loading.querySelector(".fd-pre-bar span").style.transform = `scaleX(${pct / 100})`;
+    loading.querySelector(".fd-pre-bar").setAttribute("aria-valuenow", String(pct));
+  };
 
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance", stencil: false });
   if (!renderer.capabilities.isWebGL2) {
@@ -83,8 +98,12 @@ export async function mount({ onExit }) {
     loading.querySelector("button").addEventListener("click", () => onExit());
     return { dispose() { root.remove(); document.documentElement.classList.remove("fourd-open"); ac.abort(); } };
   }
-  const maxPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
-  let pr = Math.min(maxPR, 1.5);
+  const { tier, gpu } = detectTier(renderer);
+  const B = BUDGET[tier];
+  const maxPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2, B.maxPR);
+  let pr = Math.min(maxPR, tier === "low" ? 0.85 : 1.5);
+  renderer.info.autoReset = false; // count every pass of a frame (draw-call budget)
+  progress("Starting the renderer…", 0, 6, 1);
   renderer.setPixelRatio(pr);
   renderer.setSize(innerWidth, innerHeight);
   renderer.setClearColor(0x02060a, 1);
@@ -99,49 +118,71 @@ export async function mount({ onExit }) {
   camera.position.set(0, 0.5, 3.6);
 
   const controls = new OrbitControls(camera, renderer.domElement);
-  Object.assign(controls, { enableDamping: true, dampingFactor: 0.06, enablePan: false, minDistance: 1.22, maxDistance: 7.5, rotateSpeed: 0.55, zoomSpeed: 0.7, autoRotate: !reduced, autoRotateSpeed: 0.25 });
+  Object.assign(controls, {
+    enableDamping: true, dampingFactor: 0.06, enablePan: false, minDistance: 1.22, maxDistance: 7.5, rotateSpeed: 0.55, zoomSpeed: 0.7,
+    autoRotate: !reduced, autoRotateSpeed: 0.25,
+    minPolarAngle: 0.18, maxPolarAngle: Math.PI - 0.18,  // never flip over the poles
+  });
+  // Responsive framing: wider FOV in portrait, and a distance that always fits the globe + atmosphere
+  let fitDist = 3.6;
+  function frameCamera() {
+    const portrait = innerHeight > innerWidth * 1.05;
+    camera.fov = portrait ? 52 : innerWidth / innerHeight > 2.1 ? 34 : 40;
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    const vf = (camera.fov * Math.PI) / 180, hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
+    fitDist = 1.3 / Math.sin(Math.min(vf, hf) / 2);
+    controls.maxDistance = Math.max(6, fitDist * 1.9);
+  }
+  frameCamera();
 
   // ---------------------------------------------------------------- content
-  say("Rasterising country borders…");
-  const world = await loadWorld("data/world-50m.json", { hiRes: !mobile && renderer.capabilities.maxTextureSize >= 4096 });
-  const globe = new Globe(world, { anisotropy: renderer.capabilities.getMaxAnisotropy() });
+  progress("Downloading country borders…", 6, 55);
+  const world = await loadWorld("data/world-50m.json", {
+    hiRes: B.hiRes && !mobile && renderer.capabilities.maxTextureSize >= 4096,
+    onProgress: (f) => progress("Downloading country borders…", 6, 55, f),
+  });
+  progress("Drawing 241 borders into textures…", 55, 72, 1);
+  await new Promise((r) => setTimeout(r, 0));
+  const globe = new Globe(world, { anisotropy: renderer.capabilities.getMaxAnisotropy(), globeSeg: B.globeSeg, cloudSeg: B.cloudSeg });
   const earth = new THREE.Group();
   earth.add(globe.group);
   scene.add(earth);
 
   const tesseract = new Tesseract();
   scene.add(tesseract.group);
-  const fabric = new Fabric();
+  const fabric = new Fabric(B.fabricSeg);
   scene.add(fabric.mesh);
-  const stars = makeStars(mobile ? 2500 : 5000);
+  const stars = makeStars(mobile ? Math.min(2500, B.stars) : B.stars);
   scene.add(stars);
 
   const beacons = new Beacons();
   const arcs = new Arcs();
   earth.add(beacons.group, arcs.group);
 
-  say("Loading food-safety data…");
-  const store = await loadCrises(countryMeta, { signal });
-  let trends = buildTrends(store, Date.now());
-
-  // static per-country layers for the W-axis: recall & alert density (R) and outbreak density (G)
-  const fam = new Map();
-  for (const e of store.events) {
-    for (const iso of e.iso3 || []) {
-      const f = fam.get(iso) || { recall: 0, outbreak: 0 };
-      if (e.group === "outbreak") f.outbreak++; else f.recall++;
-      fam.set(iso, f);
+  // Data is streamed in after the globe is on screen (staged loading)
+  const store = { events: [], yearly: {}, generated: null, liveStatus: "loading" };
+  let trends = new Map();
+  function applyLayers() {
+    // static per-country layers for the W-axis: recall & alert density (R) and outbreak density (G)
+    const fam = new Map();
+    for (const e of store.events) {
+      for (const iso of e.iso3 || []) {
+        const f = fam.get(iso) || { recall: 0, outbreak: 0 };
+        if (e.group === "outbreak") f.outbreak++; else f.recall++;
+        fam.set(iso, f);
+      }
     }
+    const maxR = Math.max(1, ...[...fam.values()].map((f) => f.recall)), maxO = Math.max(1, ...[...fam.values()].map((f) => f.outbreak));
+    for (const c of world.countries) {
+      const f = fam.get(c.iso3) || { recall: 0, outbreak: 0 };
+      globe.setCountryData(c.index, {
+        climate: Math.round(Math.sqrt(f.recall / maxR) * 255), geo: Math.round(Math.sqrt(f.outbreak / maxO) * 255),
+        active: 0, sources: countryMeta[c.iso3]?.authorities?.length ? 255 : 0,
+      });
+    }
+    globe.commitData();
   }
-  const maxR = Math.max(1, ...[...fam.values()].map((f) => f.recall)), maxO = Math.max(1, ...[...fam.values()].map((f) => f.outbreak));
-  for (const c of world.countries) {
-    const f = fam.get(c.iso3) || { recall: 0, outbreak: 0 };
-    globe.setCountryData(c.index, {
-      climate: Math.round(Math.sqrt(f.recall / maxR) * 255), geo: Math.round(Math.sqrt(f.outbreak / maxO) * 255),
-      active: 0, sources: countryMeta[c.iso3]?.authorities?.length ? 255 : 0,
-    });
-  }
-  globe.commitData();
 
   // ---------------------------------------------------------------- post-processing
   const composer = new EffectComposer(renderer);
@@ -156,9 +197,15 @@ export async function mount({ onExit }) {
   composer.addPass(lens);
   composer.addPass(new OutputPass());
 
+  // compile shaders before the first frame so the entry animation doesn't stutter
+  progress("Compiling shaders…", 72, 96, 0.2);
+  try { await renderer.compileAsync(scene, camera); } catch { /* falls back to compile-on-first-draw */ }
+  progress("Ready", 96, 100, 1);
+  loading.classList.add("done");
+  setTimeout(() => loading.remove(), reduced ? 0 : 650);
+
   // ---------------------------------------------------------------- HUD
-  loading.remove();
-  const ui = createHud(root, { motionSupported: MotionInput.supported() });
+  const ui = createHud(root, { motionSupported: MotionInput.supported(), touch: mobile });
   arcs.setResolution(innerWidth * pr, innerHeight * pr);
 
   // ---------------------------------------------------------------- time (4th dimension)
@@ -178,6 +225,8 @@ export async function mount({ onExit }) {
   const eye = { x: 0, y: 0, z: 1 };
   const timer = new THREE.Timer();
   let elapsed = 0, lastActiveKey = "", raf = 0, frameEMA = 16, qualityTimer = 0, scrubbing = false;
+  const vel = { x: 0, y: 0, last: null, boost: 0 };   // pointer velocity (px/ms), drives cursor-reactive physics
+  let tour = null, debugOn = new URLSearchParams(location.search).has("debug"), lastPointerTime = 0;
   const tweens = [];
 
   // ---------------------------------------------------------------- helpers
@@ -259,7 +308,7 @@ export async function mount({ onExit }) {
     // fly into low orbit
     const target = dirLocal.clone().applyMatrix4(earth.matrixWorld).normalize();
     const from = camera.position.clone();
-    const r0 = from.length(), r1 = 1.9;
+    const r0 = from.length(), r1 = Math.max(1.9, fitDist * 0.55);
     const q0 = new THREE.Quaternion(), q1 = new THREE.Quaternion().setFromUnitVectors(from.clone().normalize(), target);
     const proxy = { t: 0 };
     tweens.push(gsap.to(proxy, {
@@ -270,16 +319,20 @@ export async function mount({ onExit }) {
         camera.lookAt(0, 0, 0);
       },
     }));
-    // gravitational shockwave
-    globe.shock(dirLocal, elapsed);
-    const w = dirLocal.clone().applyMatrix4(earth.matrixWorld);
-    fabric.shock(w.x * 2.2, w.z * 2.2, elapsed);
-    const sp = w.clone().project(camera);
-    lens.uniforms.uShock.value.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5, elapsed, 0);
+    // gravitational shockwave (skipped for reduced motion: no flashing ripples)
+    if (!reduced) {
+      globe.shock(dirLocal, elapsed);
+      const w = dirLocal.clone().applyMatrix4(earth.matrixWorld);
+      fabric.shock(w.x * 2.2, w.z * 2.2, elapsed);
+      const sp = w.clone().project(camera);
+      lens.uniforms.uShock.value.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5, elapsed, 0);
+    }
     haptics.heartbeat();
     setTimeout(() => haptics.rumble(), 260);
     audio.shock(toCameraSpace(dirLocal));
     openPanel(idx, true);
+    const c = world.countries[idx];
+    ui.sr.textContent = `Selected ${countryMeta[c.iso3]?.name || c.name}. Details are in the country panel.`;
   }
 
   function deselect() {
@@ -326,13 +379,23 @@ export async function mount({ onExit }) {
     } else { ui.tip.hidden = true; renderer.domElement.style.cursor = ""; }
     // spacetime fabric cursor mass
     const p = ray.ray.intersectPlane(sheet, v3);
-    if (p) fabric.uniforms.uCursor.value.set(p.x, 1, p.z);
+    if (p) { fabric.uniforms.uCursor.value.x = p.x; fabric.uniforms.uCursor.value.z = p.z; }   // strength (.y) follows pointer speed
     lens.uniforms.uCursor.value.set(pointer.x / innerWidth, 1 - pointer.y / innerHeight, 1);
   }
   const cv = renderer.domElement;
-  cv.addEventListener("pointermove", (e) => { pointer = { x: e.clientX, y: e.clientY }; }, { signal });
+  cv.addEventListener("pointermove", (e) => {
+    const now = performance.now();
+    if (vel.last) {
+      const dtp = Math.max(8, now - vel.last.t);
+      vel.x = lerp(vel.x, (e.clientX - vel.last.x) / dtp, 0.35);
+      vel.y = lerp(vel.y, (e.clientY - vel.last.y) / dtp, 0.35);
+    }
+    vel.last = { x: e.clientX, y: e.clientY, t: now };
+    pointer = { x: e.clientX, y: e.clientY };
+    lastPointerTime = now;
+  }, { signal });
   cv.addEventListener("pointerleave", () => { pointer = null; st.hover = -1; globe.uniforms.uHover.value = -1; ui.tip.hidden = true; fabric.uniforms.uCursor.value.y = 0; lens.uniforms.uCursor.value.z = 0; }, { signal });
-  cv.addEventListener("pointerdown", (e) => { downAt = { x: e.clientX, y: e.clientY }; }, { signal });
+  cv.addEventListener("pointerdown", (e) => { downAt = { x: e.clientX, y: e.clientY }; dismissHints(); }, { signal });
   cv.addEventListener("pointerup", (e) => {
     if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 6) return;
     pointer = { x: e.clientX, y: e.clientY }; pick();
@@ -345,7 +408,12 @@ export async function mount({ onExit }) {
     const b = e.target.closest("[data-act],[data-t]");
     if (!b) return;
     const act = b.dataset.act, t = b.dataset.t;
+    audio.click(b.getAttribute("aria-pressed") !== "true");
     if (act === "exit") return onExit();
+    if (act === "hints-close") return dismissHints();
+    if (t === "tour" || act === "tour-end") return toggleTour(t === "tour" ? !tour : false);
+    if (act === "tour-next") return tour && tour.next();
+    if (act === "tour-prev") return tour && tour.prev();
     if (act === "close") return deselect();
     if (act === "live") { time.live = true; time.speed = 0; time.sim = nowReal(); haptics.tick(); }
     if (act === "play") { time.live = false; time.speed = time.speed > 0 ? 0 : 30; }
@@ -360,7 +428,7 @@ export async function mount({ onExit }) {
     }
     if (t === "haptics") { haptics.enabled = !haptics.enabled; setPressed('[data-t="haptics"]', haptics.enabled); haptics.tick(); }
     if (t === "audio") {
-      if (!st.audio) { b.textContent = "Starting audio…"; await audio.start(); st.audio = true; b.textContent = "4D audio on"; }
+      if (!st.audio) { b.textContent = "Starting audio…"; await audio.start(audioCtx); st.audio = true; b.textContent = "4D audio on"; audio.click(true); }
       else { await audio.stop(); st.audio = false; b.textContent = "Enable 4D audio"; }
       setPressed('[data-t="audio"]', st.audio);
     }
@@ -404,14 +472,29 @@ export async function mount({ onExit }) {
     ui.layers.forEach((li) => li.classList.toggle("on", +li.dataset.l === L));
     ui.w.setAttribute("aria-valuetext", ["Borders and food-safety sources", "Recall and alert density", "Foodborne outbreak density"][L]);
   }
-  cv.addEventListener("wheel", (e) => { if (e.shiftKey) { e.preventDefault(); setW(st.W + e.deltaY * 0.002); } }, { signal, passive: false });
+  root.addEventListener("wheel", (e) => {
+    if (tour && !e.target.closest(".fd-panel, .fd-find-list")) { e.preventDefault(); tour.nudge(clamp(e.deltaY, -120, 120) / 380); return; }   // scroll drives the tour timeline
+    if (e.shiftKey && e.target === cv) { e.preventDefault(); setW(st.W + e.deltaY * 0.002); }
+  }, { signal, passive: false });
+  // swipe drives the tour on touch screens
+  let touchY = null;
+  root.addEventListener("touchstart", (e) => { if (tour) touchY = e.touches[0].clientY; }, { signal, passive: true });
+  root.addEventListener("touchmove", (e) => {
+    if (!tour || touchY === null) return;
+    const y = e.touches[0].clientY; tour.nudge((touchY - y) / 260); touchY = y;
+  }, { signal, passive: true });
 
   window.addEventListener("keydown", (e) => {
     if (e.target.closest && e.target.closest("input, select, textarea")) { if (e.key !== "Escape") return; }
-    if (e.key === "Escape") { e.preventDefault(); if (st.select >= 0) deselect(); else onExit(); }
+    if (e.key === "Escape") { e.preventDefault(); if (tour) toggleTour(false); else if (st.select >= 0) deselect(); else onExit(); }
     else if (e.key === " ") { e.preventDefault(); time.live = false; time.speed = time.speed ? 0 : 30; }
     else if (e.key.toLowerCase() === "l") { time.live = true; time.speed = 0; time.sim = nowReal(); }
     else if (e.key.toLowerCase() === "h") root.querySelector('[data-t="hud"]').click();
+    else if (e.key === "/" ) { e.preventDefault(); ui.find.focus(); }
+    else if (e.key.toLowerCase() === "t") toggleTour(!tour);
+    else if (tour && ["ArrowDown", "ArrowRight", "PageDown"].includes(e.key)) { e.preventDefault(); tour.next(); }
+    else if (tour && ["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); tour.prev(); }
+    else if (e.code === "Backquote" || e.key === "`") { debugOn = !debugOn; ui.debug.hidden = !debugOn; }   // physical key, works on any layout
     else if (e.key === "[") setW(st.W - 0.1);
     else if (e.key === "]") setW(st.W + 0.1);
     updateReadout();
@@ -424,18 +507,18 @@ export async function mount({ onExit }) {
   }
 
   // ---------------------------------------------------------------- quality / resize
-  let bokehOn = !mobile;
+  let bokehOn = B.bokeh && !mobile;
   function applyQuality(force) {
     if (st.quality === "high") { pr = maxPR; bokehOn = true; bloom.strength = 0.9; }
     else if (st.quality === "low") { pr = Math.min(maxPR, 0.8); bokehOn = false; bloom.strength = 0.7; }
-    else if (force) { pr = Math.min(maxPR, 1.5); bokehOn = !mobile; bloom.strength = 0.85; }
+    else if (force) { pr = Math.min(maxPR, tier === "low" ? 0.85 : 1.5); bokehOn = B.bokeh && !mobile; bloom.strength = tier === "low" ? 0.7 : 0.85; }
     bokeh.enabled = bokehOn;
     renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
     resize();
   }
   function resize() {
     const w = innerWidth, h = innerHeight;
-    camera.aspect = w / h; camera.updateProjectionMatrix();
+    frameCamera();
     renderer.setSize(w, h); composer.setSize(w, h);
     bloom.setSize(w * pr, h * pr);
     arcs.setResolution(w * pr, h * pr);
@@ -467,19 +550,129 @@ export async function mount({ onExit }) {
     camera.updateProjectionMatrix();
   }
 
-  // ---------------------------------------------------------------- live data top-up (non-blocking)
-  refreshLive(store, countryMeta, { signal }).then((n) => {
-    trends = buildTrends(store, nowReal());
-    rebuildBeacons(true);
-    ui.status.textContent = `${store.liveStatus === "live" ? `Live FDA & WHO data · ${n} new` : "Live update unavailable · using saved snapshot"} · snapshot ${new Date(store.generated).toLocaleDateString()}`;
-  }).catch(() => {});
-  ui.status.textContent = `Saved food-safety snapshot ${new Date(store.generated).toLocaleDateString()} · checking for live updates…`;
+  // ---------------------------------------------------------------- staged data stream (after first frame)
+  ui.status.textContent = "Loading food-safety data…";
+  function streamData() {
+    loadCrises(countryMeta, { signal }).then((snap) => {
+      Object.assign(store, snap);
+      trends = buildTrends(store, nowReal());
+      applyLayers();
+      rebuildBeacons(true);
+      ui.status.textContent = `Saved food-safety snapshot ${new Date(store.generated).toLocaleDateString()} · checking for live updates…`;
+      return refreshLive(store, countryMeta, { signal }).then((n) => {
+        trends = buildTrends(store, nowReal());
+        applyLayers();
+        rebuildBeacons(true);
+        ui.status.textContent = `${store.liveStatus === "live" ? `Live FDA & WHO data · ${n} new` : "Live update unavailable · using saved snapshot"} · snapshot ${new Date(store.generated).toLocaleDateString()}`;
+      });
+    }).catch((err) => { if (!signal.aborted) ui.status.textContent = "Couldn't load food-safety data: " + (err.message || err); });
+  }
+
+  // ---------------------------------------------------------------- finder (keyboard & screen-reader parity for 3D hotspots)
+  const norm = (t) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const findable = world.countries.map((c) => ({ idx: c.index, name: countryMeta[c.iso3]?.name || c.name, iso: c.iso3 || "" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  let findResults = [], findActive = -1;
+  function renderFind() {
+    ui.findList.innerHTML = findResults.map((r, i) => `<li role="option" id="fd-opt-${r.idx}" data-idx="${r.idx}" aria-selected="${i === findActive}">${esc(r.name)}<small>${esc(r.iso)}</small></li>`).join("")
+      || (ui.find.value.trim() ? '<li class="none">No match</li>' : "");
+    ui.findList.hidden = !ui.find.value.trim();
+    ui.find.setAttribute("aria-expanded", String(!ui.findList.hidden));
+    ui.find.setAttribute("aria-activedescendant", findActive >= 0 ? `fd-opt-${findResults[findActive].idx}` : "");
+  }
+  ui.find.addEventListener("input", () => {
+    const q = norm(ui.find.value.trim());
+    findResults = q ? findable.filter((r) => norm(r.name).startsWith(q) || r.iso.toLowerCase() === q).concat(findable.filter((r) => !norm(r.name).startsWith(q) && norm(r.name).includes(q))).slice(0, 7) : [];
+    findActive = findResults.length ? 0 : -1; renderFind();
+  }, { signal });
+  ui.find.addEventListener("keydown", (e) => {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && findResults.length) {
+      e.preventDefault(); e.stopPropagation();
+      findActive = (findActive + (e.key === "ArrowDown" ? 1 : -1) + findResults.length) % findResults.length; renderFind();
+    } else if (e.key === "Enter" && findActive >= 0) { e.preventDefault(); chooseFind(findResults[findActive].idx); }
+  }, { signal });
+  ui.findList.addEventListener("pointerdown", (e) => { const li = e.target.closest("[data-idx]"); if (li) { e.preventDefault(); chooseFind(+li.dataset.idx); } }, { signal });
+  ui.find.addEventListener("blur", () => setTimeout(() => { ui.findList.hidden = true; ui.find.setAttribute("aria-expanded", "false"); }, 150), { signal });
+  function chooseFind(idx) { ui.find.value = ""; findResults = []; findActive = -1; renderFind(); if (tour) toggleTour(false); select(idx); }
+
+  // ---------------------------------------------------------------- first-visit hints (contextual cues)
+  let hintTimer = 0;
+  function dismissHints() {
+    if (ui.hints.hidden) return;
+    ui.hints.classList.add("bye");
+    setTimeout(() => { ui.hints.hidden = true; }, reduced ? 0 : 450);
+    try { localStorage.setItem("fsw4d-hints", "1"); } catch { /* private mode */ }
+    clearTimeout(hintTimer);
+  }
+  try { if (!localStorage.getItem("fsw4d-hints")) { ui.hints.hidden = false; hintTimer = setTimeout(dismissHints, 12000); } } catch { ui.hints.hidden = false; }
+
+  // ---------------------------------------------------------------- guided tour (scroll-linked timeline)
+  function buildChapters() {
+    const now = nowReal();
+    const counts = new Map();
+    for (const e of activeAt(now)) counts.set(e.home, (counts.get(e.home) || 0) + 1);
+    const top = [...counts].filter(([iso]) => countryMeta[iso] && world.countries.some((c) => c.iso3 === iso))
+      .sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const camDir = earth.worldToLocal(camera.position.clone()).normalize();
+    const camLat = Math.asin(clamp(camDir.y, -1, 1)) * 180 / Math.PI;
+    let phi = Math.atan2(camDir.z, -camDir.x); if (phi < 0) phi += Math.PI * 2;
+    const camLon = (phi / (Math.PI * 2)) * 360 - 180;
+    const totalActive = activeAt(now).length;
+    const ch = [{ title: "The world's food-safety picture", text: `${totalActive} recalls, contamination findings and foodborne outbreaks are active right now. Every beacon links to an official source.`, lat: camLat, lon: camLon, dist: fitDist * 1.02, W: 0, yearsBack: 0 }];
+    for (const [iso, n] of top) {
+      const m = countryMeta[iso];
+      const latest = activeAt(now).filter((e) => e.home === iso).sort((a, b) => b.date - a.date)[0];
+      ch.push({ title: m.name, text: `${n} active issue${n === 1 ? "" : "s"}. Latest: ${latest ? latest.title : ""}`, lat: m.lat, lon: m.lon, dist: Math.max(2.1, fitDist * 0.62), W: 0, yearsBack: 0, iso });
+    }
+    ch.push({ title: "Where recalls & alerts cluster", text: "The W-axis shifts the globe into a density layer: brighter countries have more recalls and safety alerts in the record.", lat: 30, lon: -40, dist: fitDist * 1.05, W: 1, yearsBack: 0 });
+    ch.push({ title: "Foodborne outbreak density", text: "Further along the W-axis: cholera, typhoid, hepatitis A/E, Salmonella and other food- and waterborne outbreaks reported by WHO and ReliefWeb.", lat: 5, lon: 25, dist: fitDist * 1.05, W: 2, yearsBack: 0 });
+    ch.push({ title: "Five years ago", text: "Time is the 4th dimension: the scene rewinds to the issues active five years ago. The Earth and sunlight move with it.", lat: 15, lon: 40, dist: fitDist, W: 0, yearsBack: 5 });
+    ch.push({ title: "Now explore on your own", text: "Drag to orbit, click any country, or search for one. Press T to replay this tour.", lat: 25, lon: -20, dist: fitDist * 1.02, W: 0, yearsBack: 0 });
+    return ch;
+  }
+  function toggleTour(on) {
+    if (on && !tour) {
+      dismissHints();
+      if (st.select >= 0) deselect();
+      tour = new Tour(buildChapters(), {
+        reduced,
+        onChapter: (i, c) => {
+          ui.tourStep.textContent = `Chapter ${i + 1} of ${tour.count}`;
+          ui.tourTitle.textContent = c.title;
+          ui.tourText.textContent = c.text;
+          ui.tourDots.innerHTML = tour.chapters.map((_, k) => `<li class="${k === i ? "on" : ""}"></li>`).join("");
+          haptics.tick();
+          if (c.iso) {
+            const idx = world.countries.findIndex((w) => w.iso3 === c.iso);
+            if (idx >= 0) { st.select = idx; globe.uniforms.uSelect.value = idx; openPanel(idx, true); }
+          } else if (st.select >= 0) { st.select = -1; globe.uniforms.uSelect.value = -1; ui.panel.hidden = true; arcs.clear(); }
+        },
+      });
+      controls.enabled = false; controls.autoRotate = false;
+      ui.tour.hidden = false;
+      setPressed('[data-t="tour"]', true);
+    } else if (!on && tour) {
+      tour.dispose(); tour = null;
+      controls.enabled = true; controls.autoRotate = !reduced;
+      ui.tour.hidden = true;
+      time.live = true; time.speed = 0;
+      setPressed('[data-t="tour"]', false);
+      if (st.select >= 0) deselect();
+    }
+  }
+
+  // ---------------------------------------------------------------- battery: stop the loop while the tab is hidden
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+    else if (!raf) { timer.update(); raf = requestAnimationFrame(frame); }
+  }, { signal });
+  ui.debug.hidden = !debugOn;
 
   // ---------------------------------------------------------------- loop
   const sunLocal = new THREE.Vector3();
   function frame() {
     raf = requestAnimationFrame(frame);
-    if (document.hidden) return;
+    renderer.info.reset();
     timer.update();
     const dt = Math.min(timer.getDelta(), 0.1);
     elapsed += dt;
@@ -502,13 +695,34 @@ export async function mount({ onExit }) {
     // 4D lattice: rotation planes coupled to elapsed time, simulated time and W depth
     const yearsOff = (time.sim - nowReal()) / YEAR;
     const spin = reduced ? 0.25 : 1;
-    tesseract.update({ xw: elapsed * 0.17 * spin + yearsOff * 0.9 + st.W * 0.6, yw: elapsed * 0.11 * spin, zw: st.W * 1.1 + yearsOff * 0.5, xy: elapsed * 0.05 * spin }, st.W);
+    // pointer velocity -> extra 4D spin, decays like momentum
+    const speedPx = Math.hypot(vel.x, vel.y);
+    if (!reduced) vel.boost = lerp(vel.boost, Math.min(2.5, speedPx), 0.08);
+    vel.x *= 0.9; vel.y *= 0.9;
+    if (performance.now() - lastPointerTime > 120) { vel.x *= 0.8; vel.y *= 0.8; }
+    tesseract.update({ xw: elapsed * 0.17 * spin + yearsOff * 0.9 + st.W * 0.6 + vel.boost * 0.4, yw: elapsed * 0.11 * spin + vel.boost * 0.25, zw: st.W * 1.1 + yearsOff * 0.5, xy: elapsed * 0.05 * spin }, st.W);
     tesseract.group.rotation.y = elapsed * 0.02 * spin;
 
     const W = st.W;
     globe.uniforms.uTime.value = elapsed; globe.uniforms.uW.value = W;
     fabric.uniforms.uTime.value = elapsed; fabric.uniforms.uW.value = W;
-    stars.material.uniforms.uTime.value = elapsed;
+    stars.material.uniforms.uTime.value = reduced ? 0 : elapsed;
+    // cursor-reactive physics: stars drift against pointer motion (depth parallax), fabric well deepens with speed
+    if (!reduced) {
+      stars.material.uniforms.uDrift.value.set(lerp(stars.material.uniforms.uDrift.value.x, -vel.x * 0.35, 0.1), lerp(stars.material.uniforms.uDrift.value.y, vel.y * 0.35, 0.1));
+      if (pointer) fabric.uniforms.uCursor.value.y = 0.6 + Math.min(2.4, speedPx * 1.6);
+    }
+
+    // guided tour drives camera, W-axis and time from the scroll-linked timeline
+    if (tour) {
+      const t = tour.update(dt);
+      const d = latLonToVec3(t.lat, ((t.lon + 540) % 360) - 180, 1).applyMatrix4(earth.matrixWorld).normalize();
+      camera.position.copy(d.multiplyScalar(t.dist));
+      camera.lookAt(0, 0, 0);
+      if (Math.abs(t.W - st.W) > 0.004) setW(t.W);
+      if (t.yearsBack > 0.01) { time.live = false; time.speed = 0; time.sim = nowReal() - t.yearsBack * YEAR; }
+      else if (!time.live) { time.live = true; }
+    }
 
     rebuildBeacons(false);
     beacons.update(elapsed, st.select >= 0 ? world.countries[st.select].iso3 : null);
@@ -518,11 +732,13 @@ export async function mount({ onExit }) {
     // speed-driven aberration
     const speed = time.live ? 0 : (time.speed || scrubVel * 8);
     scrubVel *= 0.9;
-    lens.uniforms.uAb.value = 0.0010 + Math.min(0.0028, Math.abs(speed) * 0.00001);
+    lens.uniforms.uAb.value = reduced ? 0.0006 : 0.0010 + Math.min(0.0028, Math.abs(speed) * 0.00001);
+    if (reduced) lens.uniforms.uCursor.value.z = 0;
+    else if (pointer) lens.uniforms.uCursor.value.z = 0.5 + Math.min(1.5, speedPx);
     lens.uniforms.uTime.value = elapsed;
 
     updateReadout();
-    controls.update();
+    if (!tour) controls.update();
 
     // globe screen centre & radius for the lens
     const c = v3.set(0, 0, 0).project(camera);
@@ -544,6 +760,11 @@ export async function mount({ onExit }) {
     composer.render(dt);
     if (s) restoreEye(s);
 
+    if (debugOn && (qualityTimer > 0.5 || qualityTimer < dt)) {
+      const i = renderer.info.render;
+      ui.debug.textContent = `${(1000 / frameEMA).toFixed(0)} fps · ${frameEMA.toFixed(1)} ms · ${i.calls} draw calls · ${(i.triangles / 1000).toFixed(0)}k tris · DPR ${pr.toFixed(2)} · tier ${tier} · ${gpu.replace(/^ANGLE \(|\)$/g, "").slice(0, 48)}`;
+    }
+
     // adaptive quality: aim for 60 fps
     if (st.quality === "auto" && (qualityTimer += dt) > 1) {
       qualityTimer = 0;
@@ -556,9 +777,10 @@ export async function mount({ onExit }) {
   updateReadout();
   // start looking at the daylit side
   const ss0 = subsolarPoint(time.sim);
-  camera.position.copy(latLonToVec3(ss0.lat * 0.5 + 15, ss0.lon - 35, 3.6));
+  camera.position.copy(latLonToVec3(ss0.lat * 0.5 + 15, ss0.lon - 35, fitDist));
   camera.lookAt(0, 0, 0);
   frame();
+  requestAnimationFrame(() => streamData()); // hero scene first, data second
   root.querySelector(".fd-exit").focus({ preventScroll: true });
 
   // ---------------------------------------------------------------- teardown
@@ -567,6 +789,8 @@ export async function mount({ onExit }) {
       cancelAnimationFrame(raf);
       ac.abort();
       tweens.forEach((t) => t.kill());
+      if (tour) tour.dispose();
+      clearTimeout(hintTimer);
       head.stop();
       audio.stop();
       controls.dispose();

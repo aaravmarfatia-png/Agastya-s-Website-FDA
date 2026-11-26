@@ -99,7 +99,7 @@
     wake();
   });
 
-  function wake() { if (!raf) raf = requestAnimationFrame(tick); }
+  function wake() { if (!raf && !document.documentElement.classList.contains("fourd-open")) raf = requestAnimationFrame(tick); }
 
   // ---------- the loop ----------
   function tick() {

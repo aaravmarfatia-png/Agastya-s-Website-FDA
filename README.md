@@ -61,9 +61,9 @@ Click **4D globe** in the top menu, or open `http://localhost:8000/?4d`. It need
 npm install                     # three, gsap, topojson-client, world-atlas, @mediapipe/tasks-vision
 node scripts/build-world.mjs    # data/world-50m.json: country borders tagged with ISO3 codes
 python3 fetch_crises.py         # data/crises.json: food-safety issues per country
-python3 -m http.server 8000
+npm run serve                   # local server on http://localhost:8000
 ```
-The site loads these packages straight from `node_modules` through an import map in `index.html`, so there's no build step. If you host the site, upload `node_modules` along with it, or copy across the files the import map points to.
+Use `npm run serve` rather than `python3 -m http.server`: Python's server only queues 5 connections and drops some of the ~60 files the 4D globe loads at once. The site loads these packages straight from `node_modules` through an import map in `index.html`, so there's no build step. If you host the site, upload `node_modules` along with it, or copy across the files the import map points to.
 
 **What's in it:**
 
@@ -89,3 +89,13 @@ The site loads these packages straight from `node_modules` through an import map
 The browser refreshes openFDA and WHO live, and uses `data/crises.json` if they can't be reached. Nothing is invented: a country with no records says so.
 
 The "future" part of the timeline is a straight-line trend of each country's yearly food-safety record counts. It is labelled as such and is not a forecast. ReliefWeb's history is kept in `data/cache/` (git-ignored). Its JSON API needs an approved app name (https://apidoc.reliefweb.int/#appname), so missing countries are fetched from its public RSS one at a time, with pauses.
+
+### Experience & performance details
+
+- **Guided tour** (`T`, or the Tour button): a GSAP timeline linked to scrolling, swiping and the arrow keys. It has momentum and snaps to chapters: overview → the countries with the most active issues → the two W-axis layers → five years back.
+- **Cursor physics:** pointer speed deepens the spacetime well, strengthens the lens, makes the stars drift (depth parallax) and spins the tesseract faster. The effects decay like momentum.
+- **Staged loading:** a progress bar tracks the border download, texture drawing and shader compiling. The globe appears first, then the food-safety data streams in. The sound system is prepared on the click that opens 4D but stays silent until you turn audio on.
+- **Device tiers** (`fourd/gpu.js`): software renderers and weak GPUs get fewer polygons and stars, no depth of field and a lower resolution. Resolution is never higher than 2×.
+- **Frame budget:** add `?debug` to the URL, or press the backtick key, to show fps, frame time, draw calls and the tier. The scene uses about 25–50 draw calls. The loop stops while the tab is hidden, and the 2D page's animations pause while 4D is open.
+- **Accessibility:** "Find a country" (`/`) gives keyboard and screen-reader access to every country. Selections are announced, and first-visit hints explain the controls. Reduced-motion users get no camera flights, shockwave flashes, lens wobble or cursor effects. Devices without WebGL 2 get an explanation and keep the 2D site.
+- **Not applicable:** there are no imported 3D models or image textures, so PBR/HDRI, Draco/Meshopt `.glb` and KTX2 compression don't apply. Every surface is a custom shader drawn from generated data.

@@ -2,13 +2,14 @@
 import { esc, host, DAY_MS } from "./util.js";
 import { GROUPS } from "./crises.js";
 
-export function createHud(root, { motionSupported }) {
+export function createHud(root, { motionSupported, touch }) {
   root.insertAdjacentHTML("beforeend", `
   <div class="fd-hud" data-hud="on">
     <header class="fd-top fd-glass">
       <button class="fd-btn fd-exit" data-act="exit" aria-label="Exit 4D mode (Esc)"><span aria-hidden="true">←</span> Exit 4D</button>
       <div class="fd-title"><b>Food Safety Watch <i>4D</i></b><span>Food-safety issues · official government &amp; UN sources</span></div>
       <div class="fd-toggles" role="toolbar" aria-label="4D controls">
+        <button class="fd-btn fd-tour-btn" data-t="tour" aria-pressed="false" title="Guided tour: scroll, swipe or use the arrow keys (T)">▶ Tour</button>
         <button class="fd-btn" data-t="holo" aria-pressed="false" title="Uses your webcam on this device only to track your head">Hologram (webcam)</button>
         ${motionSupported ? '<button class="fd-btn" data-t="motion" aria-pressed="false">Motion</button>' : ""}
         <button class="fd-btn" data-t="audio" aria-pressed="false">Enable 4D audio</button>
@@ -19,15 +20,46 @@ export function createHud(root, { motionSupported }) {
       </div>
     </header>
 
+    <div class="fd-finder fd-glass" role="search">
+      <label class="sr-only" for="fd-find">Find a country on the globe</label>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="fd-find" type="search" placeholder="Find a country… (/)" autocomplete="off" role="combobox"
+             aria-expanded="false" aria-controls="fd-find-list" aria-autocomplete="list">
+      <ul id="fd-find-list" class="fd-find-list" role="listbox" hidden></ul>
+    </div>
+
     <aside class="fd-panel fd-glass" hidden aria-live="polite"></aside>
+
+    <section class="fd-tour fd-glass" hidden aria-live="polite" aria-label="Guided tour">
+      <div class="fd-tour-step"></div>
+      <h2 class="fd-tour-title"></h2>
+      <p class="fd-tour-text"></p>
+      <div class="fd-tour-nav">
+        <button class="fd-btn fd-round" data-act="tour-prev" aria-label="Previous chapter">↑</button>
+        <ol class="fd-tour-dots" aria-hidden="true"></ol>
+        <button class="fd-btn fd-round" data-act="tour-next" aria-label="Next chapter">↓</button>
+        <button class="fd-btn" data-act="tour-end">End tour</button>
+      </div>
+      <p class="fd-tour-hint">${touch ? "Swipe up or down to travel" : "Scroll, or use ↑ ↓, to travel"}</p>
+    </section>
+
+    <div class="fd-hints fd-glass" hidden role="note" aria-label="How to explore">
+      ${touch
+        ? `<span><svg viewBox="0 0 24 24"><path d="M12 3v10m0 0-3-3m3 3 3-3M6 13a6 6 0 0 0 12 0"/></svg>Drag to orbit</span><span><svg viewBox="0 0 24 24"><path d="M7 7l-3-3m0 0v4m0-4h4M17 17l3 3m0 0v-4m0 4h-4"/></svg>Pinch to zoom</span><span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Tap a country</span>`
+        : `<span><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="5"/><path d="M12 7v3"/></svg>Drag to orbit · scroll to zoom</span><span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/></svg>Click a country</span><span><kbd>Shift</kbd>+scroll: W-axis</span><span><kbd>T</kbd> guided tour</span>`}
+      <button class="fd-btn fd-round" data-act="hints-close" aria-label="Dismiss tips">✕</button>
+    </div>
+
+    <div class="fd-debug" hidden aria-hidden="true"></div>
+    <p class="sr-only fd-sr" aria-live="polite"></p>
 
     <div class="fd-w fd-glass">
       <label for="fd-w-range" class="fd-w-title">W-axis depth</label>
       <input id="fd-w-range" type="range" min="0" max="2" step="0.01" value="0" aria-valuetext="Borders and food-safety sources">
       <ol class="fd-w-layers">
-        <li data-l="2">Foodborne outbreak density</li>
-        <li data-l="1">Recall &amp; alert density</li>
-        <li data-l="0" class="on">Borders &amp; food-safety sources</li>
+        <li data-l="2"><span class="lg">Foodborne outbreak density</span><span class="sm">Outbreaks</span></li>
+        <li data-l="1"><span class="lg">Recall &amp; alert density</span><span class="sm">Recalls</span></li>
+        <li data-l="0" class="on"><span class="lg">Borders &amp; food-safety sources</span><span class="sm">Borders</span></li>
       </ol>
     </div>
 
@@ -47,7 +79,7 @@ export function createHud(root, { motionSupported }) {
       </div>
       <div class="fd-track">
         <input class="fd-scrub" type="range" min="0" max="1000" step="1" aria-label="4D time scrubber: past food-safety issues, live present, statistical trend">
-        <div class="fd-ticks"><span>Past issues</span><span class="fd-now">Live present</span><span>Trend projection</span></div>
+        <div class="fd-ticks"><span><span class="lg">Past issues</span><span class="sm">Past</span></span><span class="fd-now"><span class="lg">Live present</span><span class="sm">Now</span></span><span><span class="lg">Trend projection</span><span class="sm">Trend</span></span></div>
       </div>
     </footer>
 
@@ -62,6 +94,9 @@ export function createHud(root, { motionSupported }) {
     w: q("#fd-w-range"), layers: root.querySelectorAll(".fd-w-layers li"), scrub: q(".fd-scrub"),
     date: q(".fd-date"), mode: q(".fd-mode"), count: q(".fd-count"), play: q(".fd-play"), restore: q(".fd-restore"),
     nowTick: q(".fd-now"),
+    find: q("#fd-find"), findList: q("#fd-find-list"), tour: q(".fd-tour"), tourStep: q(".fd-tour-step"),
+    tourTitle: q(".fd-tour-title"), tourText: q(".fd-tour-text"), tourDots: q(".fd-tour-dots"),
+    hints: q(".fd-hints"), debug: q(".fd-debug"), sr: q(".fd-sr"),
   };
 }
 

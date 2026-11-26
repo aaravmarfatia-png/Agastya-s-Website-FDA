@@ -112,7 +112,7 @@ void main(){
 }`;
 
 export class Fabric {
-  constructor() {
+  constructor(segments = 240) {
     this.uniforms = {
       uCursor: { value: new THREE.Vector3(0, 0, 0) },
       uShock: { value: [new THREE.Vector4(0, 0, 0, -99), new THREE.Vector4(0, 0, 0, -99), new THREE.Vector4(0, 0, 0, -99)] },
@@ -120,7 +120,7 @@ export class Fabric {
     };
     this.slot = 0;
     this.mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(28, 28, 240, 240),
+      new THREE.PlaneGeometry(28, 28, segments, segments),
       new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: fabricVert, fragmentShader: fabricFrag, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
     );
     this.mesh.position.y = -1.55;
@@ -143,9 +143,11 @@ export function makeStars(count = 5000) {
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   g.setAttribute("size", new THREE.BufferAttribute(size, 1));
   const m = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uPR: { value: 1 } },
-    vertexShader: `attribute float size; uniform float uTime, uPR; varying float vA;
-      void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vA = 0.55 + 0.45*sin(uTime*1.3 + position.x*7.0);
+    uniforms: { uTime: { value: 0 }, uPR: { value: 1 }, uDrift: { value: new THREE.Vector2() } },
+    vertexShader: `attribute float size; uniform float uTime, uPR; uniform vec2 uDrift; varying float vA;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0);
+      mv.xy += uDrift * (size * 0.6);   // near (bigger) stars drift more with pointer velocity: parallax depth
+      vA = 0.55 + 0.45*sin(uTime*1.3 + position.x*7.0);
       gl_PointSize = size * uPR * 1.6; gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d);
       gl_FragColor = vec4(vec3(0.85,0.92,1.0) * vA * 1.4, a * vA); }`,
