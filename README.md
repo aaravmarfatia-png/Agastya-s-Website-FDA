@@ -63,7 +63,9 @@ Click **4D globe** in the top menu, or open `http://localhost:8000/?4d`. It need
 ```
 npm install                     # three, gsap, topojson-client, world-atlas, @mediapipe/tasks-vision
 node scripts/build-world.mjs    # data/world-50m.json: country borders tagged with ISO3 codes
-python3 fetch_crises.py         # data/crises.json: food-safety issues per country
+python3 scripts/fetch-rasff.py              # EU RASFF notifications -> data/cache (first run ~15 min, then incremental)
+python3 scripts/fetch-fda-import-alerts.py  # FDA import alerts per country -> data/cache (~4 min)
+python3 fetch_crises.py                     # data/issues/: index.json + one file per country
 npm run serve                   # local server on http://localhost:8000
 ```
 Use `npm run serve` rather than `python3 -m http.server`: Python's server only queues 5 connections and drops some of the ~60 files the 4D globe loads at once. There's no build step: `npm run vendor` copies just the library files the 4D globe uses from `node_modules` into `vendor/lib/` (committed), and the import maps in `index.html` and `device-check.html` point there. So any static host, GitHub Pages included, works without `node_modules`.
@@ -84,12 +86,14 @@ Use `npm run serve` rather than `python3 -m http.server`: Python's server only q
 | Performance | The resolution adjusts automatically to aim for 60 fps (or choose High/Low). Exiting releases everything: WebGL, webcam, audio and event listeners. |
 
 **Data: food-safety issues only, from official sources.** Natural disasters, conflicts, hunger/food security and non-food diseases are left out.
-- **U.S. FDA (openFDA food enforcement reports):** food recalls, including recalls by firms in 30+ other countries. U.S. recalls are placed by state. Recalls for lead, other chemicals or adulteration count as contamination.
-- **WHO Disease Outbreak News:** outbreaks of foodborne and waterborne diseases (cholera, typhoid, hepatitis A/E, botulism, Salmonella, Listeria, E. coli…), plus contamination events such as methanol or melamine.
+- **EU RASFF (European Commission):** every food and food-contact-material notification in the RASFF Window (border rejections, alerts, information notices), filed under the **country the product came from**, with hazard, product category, risk level, the reporting country and a link to the official notification. Animal feed is left out.
+- **U.S. FDA Import Alerts:** food and dietary-supplement import alerts that list firms in each country (FDA industry codes 02–46 and 54; general code 99 only when the title names a food hazard).
+- **U.S. FDA (openFDA food enforcement reports):** food recalls, including by firms in 30+ other countries. U.S. recalls are placed by state.
+- **WHO Disease Outbreak News:** foodborne and waterborne disease outbreaks and contamination events.
 - **ReliefWeb (UN OCHA):** foodborne and waterborne epidemics.
-- **The site's national feeds:** FDA, CDC, UK Food Standards Agency and CFIA recalls and alerts. WHO/FAO news is used only when it names a food-safety hazard.
+- **The site's national feeds:** FDA, CDC, UK Food Standards Agency and CFIA recalls and alerts.
 
-The browser refreshes openFDA and WHO live, and uses `data/crises.json` if they can't be reached. Nothing is invented: a country with no records says so.
+`fetch_crises.py` writes `data/issues/index.json` (a compact row per issue for the globe's beacons, layers and timeline) and `data/issues/<ISO3>.json` (every issue for one country, with full detail). A country's file is only downloaded when it's opened, in the 4D panel or the Trusted sources drawer. The browser also tops up openFDA and WHO live. Nothing is invented: a country with no records says so.
 
 The "future" part of the timeline is a straight-line trend of each country's yearly food-safety record counts. It is labelled as such and is not a forecast. ReliefWeb's history is kept in `data/cache/` (git-ignored). Its JSON API needs an approved app name (https://apidoc.reliefweb.int/#appname), so missing countries are fetched from its public RSS one at a time, with pauses.
 

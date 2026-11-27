@@ -33,10 +33,11 @@
     const t = norm(term.trim());
     if (!t) return [];
     const starts = [], has = [];
+    const aliases = window.FSW_ALIASES || {};
     for (const c of all) {
-      const n = norm(c.name);
-      if (n.startsWith(t) || c.iso3.toLowerCase() === t) starts.push(c);
-      else if (n.includes(t)) has.push(c);
+      const n = norm(c.name), aka = (aliases[c.iso3] || []).map(norm);
+      if (n.startsWith(t) || c.iso3.toLowerCase() === t || aka.some((a) => a.startsWith(t))) starts.push(c);
+      else if (n.includes(t) || aka.some((a) => a.includes(t))) has.push(c);
     }
     return starts.concat(has).slice(0, 7);
   }
@@ -121,12 +122,14 @@
         ${c.authorities.map((a) => sourceRow(a.name, a.url, "Government")).join("")}
         ${sourceRow("WHO country office: " + c.name, c.who, "United Nations")}
       </div>
+      <section class="drawer-issues" aria-live="polite"><h3>Food-safety issues</h3><p class="drawer-sub">Loading official records…</p></section>
       <div class="drawer-nav">
         <button data-go="${esc(peers[(idx - 1 + peers.length) % peers.length].iso3)}"><span aria-hidden="true">←</span> ${esc(peers[(idx - 1 + peers.length) % peers.length].name)}</button>
         <span>${idx + 1} / ${peers.length} in ${esc(c.continent)}</span>
         <button data-go="${esc(peers[(idx + 1) % peers.length].iso3)}">${esc(peers[(idx + 1) % peers.length].name)} <span aria-hidden="true">→</span></button>
       </div>`;
 
+    loadIssues(iso);
     body.classList.remove("swap"); void body.offsetWidth; body.classList.add("swap");
     drawer.classList.add("open"); backdrop.classList.add("open");
     drawer.setAttribute("aria-hidden", "false");
@@ -134,6 +137,34 @@
     document.querySelectorAll(".wcard.on").forEach((el) => el.classList.remove("on"));
     const card = document.querySelector(`.wcard[data-iso="${iso}"]`);
     if (card) card.classList.add("on");
+  }
+
+  // Recent food-safety issues for the country, from data/issues/<ISO3>.json (built by fetch_crises.py)
+  const issueCache = new Map();
+  async function loadIssues(iso) {
+    const box = body.querySelector(".drawer-issues");
+    try {
+      if (!issueCache.has(iso)) issueCache.set(iso, fetch(`data/issues/${iso}.json`).then((r) => (r.ok ? r.json() : { items: [] })));
+      const data = await issueCache.get(iso);
+      if (current !== iso || !box.isConnected) return;
+      const items = data.items || [];
+      const bySource = {};
+      for (const i of items) bySource[i.source] = (bySource[i.source] || 0) + 1;
+      let shown = 10;
+      const render = () => {
+        box.innerHTML = `<h3>Food-safety issues <span class="issue-total">${items.length.toLocaleString()}</span></h3>
+          <p class="drawer-sub">${items.length ? Object.entries(bySource).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)}: ${v.toLocaleString()}`).join("<br>")
+            : "No recall, border rejection, import alert or foodborne outbreak for this country appears in the official sources this site reads."}</p>
+          <ol class="issue-list">${items.slice(0, shown).map((i) => `<li><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">
+            <b>${esc(i.title)}</b><small>${esc(new Date(i.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }))}, ${esc(i.label || i.source)}</small></a></li>`).join("")}</ol>
+          ${items.length > shown ? `<button class="issue-more" type="button">Show ${Math.min(20, items.length - shown)} more</button>` : ""}`;
+        const more = box.querySelector(".issue-more");
+        if (more) more.addEventListener("click", () => { shown += 20; render(); });
+      };
+      render();
+    } catch {
+      box.innerHTML = `<h3>Food-safety issues</h3><p class="drawer-sub">Couldn't load the records. Check the connection and open the country again.</p>`;
+    }
   }
 
   function closeDrawer() {
@@ -205,7 +236,7 @@
     const rows = all.filter((c) =>
       (ws.cont === "All" || c.continent === ws.cont) &&
       (!ws.verifiedOnly || c.authorities.length) &&
-      (!t || norm(c.name).includes(t)));
+      (!t || norm(c.name).includes(t) || ((window.FSW_ALIASES || {})[c.iso3] || []).some((a) => norm(a).includes(t))));
     $("#world-count").textContent = `${rows.length} ${rows.length === 1 ? "country" : "countries"}`;
     $("#world-grid").innerHTML = rows.length ? rows.map((c) => `
       <button class="wcard${current === c.iso3 ? " on" : ""}" data-iso="${c.iso3}">

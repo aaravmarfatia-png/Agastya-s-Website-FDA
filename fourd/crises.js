@@ -32,13 +32,37 @@ const FEED_REGION = { "United States": "USA", "United Kingdom": "GBR", Canada: "
 const FDA_COUNTRY = { "Korea (the Republic of)": "KOR", "Dominican Republic (the)": "DOM", Vietnam: "VNM", Taiwan: "TWN", "United States": "USA" };
 
 function mkEvent(e) {
-  const date = Date.parse(e.date);
-  return { ...e, date, end: date + (ACTIVE_DAYS[e.group] || 90) * DAY_MS };
+  const date = typeof e.date === "number" ? e.date : Date.parse(e.date);
+  return { ...e, date, end: date + (e.days || ACTIVE_DAYS[e.group] || 90) * DAY_MS };
+}
+
+// Per-country detail files (data/issues/<ISO3>.json) are fetched only when a country is opened.
+const countryFiles = new Map();
+export function loadCountry(iso) {
+  if (!iso) return Promise.resolve([]);
+  if (!countryFiles.has(iso)) {
+    countryFiles.set(iso, fetch(`data/issues/${iso}.json`).then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => (d.items || []).map((i) => mkEvent({ ...i, iso3: i.also || [iso], home: (i.also || [iso])[0] })))
+      .catch(() => { countryFiles.delete(iso); return []; }));
+  }
+  return countryFiles.get(iso);
+}
+
+/** Every issue for one country: the country file plus anything only in memory (national feeds, live top-ups). */
+export async function issuesFor(store, iso) {
+  const fromFile = await loadCountry(iso);
+  const seen = new Set(fromFile.map((e) => e.url));
+  const extra = store.events.filter((e) => e.title && e.iso3?.includes(iso) && !seen.has(e.url));
+  return [...extra, ...fromFile].sort((a, b) => b.date - a.date);
 }
 
 export async function loadCrises(countryMeta, { signal }) {
-  const snap = await (await fetch("data/crises.json", { signal })).json();
-  const events = snap.items.filter((i) => i.date && GROUPS[i.group]).map(mkEvent);
+  // compact index: one row per issue, enough for beacons, layers, trends and the timeline
+  const snap = await (await fetch("data/issues/index.json", { signal })).json();
+  const events = snap.events.map(([ci, lat, lon, day, g, w, days, si]) => {
+    const iso3 = ci.map((k) => snap.countries[k]);
+    return mkEvent({ iso3, home: iso3[0], lat, lon, date: day * DAY_MS, group: snap.groups[g], weight: w / 100, days, source: snap.sourceList[si] });
+  });
 
   // recalls & alerts from the national feeds the site already collects (data/feed.js)
   const names = Object.values(countryMeta).sort((a, b) => b.name.length - a.name.length);
@@ -63,8 +87,8 @@ export async function loadCrises(countryMeta, { signal }) {
     }));
   }
   const seen = new Set();
-  const unique = events.filter((e) => (seen.has(e.url) ? false : seen.add(e.url)));
-  return { events: unique, yearly: snap.yearly || {}, generated: snap.generated, liveStatus: "snapshot" };
+  const unique = events.filter((e) => !e.url || (seen.has(e.url) ? false : seen.add(e.url)));
+  return { events: unique, yearly: snap.yearly || {}, counts: snap.counts || {}, sources: snap.sources || {}, generated: snap.generated, liveStatus: "snapshot" };
 }
 
 /** Top up with live official data. Resolves with the number of new items (0 on any failure). */
@@ -136,7 +160,7 @@ export function buildTrends(store, nowMs) {
 
 // ------------------------------------------------------------------ beacons
 export class Beacons {
-  constructor(max = 900) {
+  constructor(max = 3000) {
     this.max = max;
     const g = new THREE.CylinderGeometry(0.0032, 0.0032, 1, 6, 1, true).translate(0, 0.5, 0);
     this.pillars = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }), max);

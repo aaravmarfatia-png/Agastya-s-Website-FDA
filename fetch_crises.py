@@ -35,7 +35,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "data" / "crises.json"
+OUT_DIR = ROOT / "data" / "issues"          # index.json + one file per country
 CACHE = ROOT / "data" / "cache" / "reliefweb.json"
 UA = "curl/8.7.1"
 
@@ -73,7 +73,12 @@ FDA_COUNTRY = {  # openFDA country names that differ from data/countries.js
     "Korea (the Republic of)": "KOR", "Dominican Republic (the)": "DOM", "Vietnam": "VNM", "Taiwan": "TWN",
     "United States": "USA", "Russia": "RUS", "Turkey": "TUR",
 }
-EXTRA_PLACES = {"TWN": ("Taiwan", 23.7, 121.0)}  # shown on the map but not a WHO member state
+EXTRA_PLACES = {  # territories on the map that appear in official records but are not WHO member states
+    "TWN": ("Taiwan", 23.7, 121.0), "HKG": ("Hong Kong", 22.32, 114.17), "MAC": ("Macao", 22.2, 113.55),
+    "PSE": ("Palestine", 31.9, 35.2), "XKX": ("Kosovo", 42.6, 20.9), "PRI": ("Puerto Rico", 18.2, -66.5),
+    "GRL": ("Greenland", 64.2, -51.7), "FRO": ("Faroe Islands", 62.0, -6.8), "NCL": ("New Caledonia", -21.3, 165.5),
+    "PYF": ("French Polynesia", -17.7, -149.4),
+}
 WHO_ALIASES = {
     "Democratic Republic of the Congo": "COD", "Syrian Arab Republic": "SYR", "United Republic of Tanzania": "TZA",
     "Viet Nam": "VNM", "Türkiye": "TUR", "Turkey": "TUR", "Republic of Korea": "KOR", "Iran (Islamic Republic of)": "IRN",
@@ -296,6 +301,101 @@ def who_don(countries: list[dict], meta: dict, errors) -> list:
     return out
 
 
+# ------------------------------------------------------------------ EU RASFF (European Commission)
+RASFF_WEIGHT = {"serious": 1.0, "potentially serious": 0.75, "potential risk": 0.6, "not serious": 0.35, "no risk": 0.25, "undecided": 0.55}
+PATHOGEN = re.compile(r"salmonell|listeri|e\.? ?coli|stec|norovirus|hepatitis|bacillus|clostridi|vibrio|campylobacter|"
+                      r"enterobacter|cronobacter|mould|mold|yeast|anisakis|parasit|insect|rodent|infest|spoil|decomposi", re.I)
+CHEM_PLUS = re.compile(CHEMICAL.pattern + r"|ochratoxin|pesticide|residue|chlorpyrifos|ethylene oxide|2-chloroethanol|cadmium|dioxin|"
+                       r"\bpahs?\b|benzo\(a\)pyrene|sulphite|sulfite|unauthori[sz]ed|migration|histamine|nitrite|veterinary|"
+                       r"\bcolou?rs?\b|sudan (dyes?|red|orange|i{1,3}v?|[1-4])\b|tropane|alkaloid|3-mcpd|glycidyl|mineral oil|acrylamide|\bnickel\b|chromium|\btin\b", re.I)
+
+
+def place(iso: str, meta: dict):
+    m = meta.get(iso)
+    if m:
+        return m["lat"], m["lon"]
+    if iso in EXTRA_PLACES:
+        return EXTRA_PLACES[iso][1], EXTRA_PLACES[iso][2]
+    return None
+
+
+def rasff_items(meta: dict, errors) -> list:
+    path = ROOT / "data" / "cache" / "rasff.json"
+    if not path.exists():
+        errors.append("RASFF cache missing: run python3 scripts/fetch-rasff.py")
+        return []
+    iso2to3 = {v: k for k, v in json.loads((ROOT / "data" / "cache" / "iso3to2.json").read_text()).items()}
+    iso2to3.update({"XK": "XKX", "UK": "GBR", "EL": "GRC"})
+    out = []
+    for n in json.loads(path.read_text())["notifications"].values():
+        ptype = (n.get("productType") or {}).get("description", "")
+        if ptype not in ("food", "food contact material"):
+            continue  # animal feed is left out: food safety only
+        origins = [iso2to3.get((o or {}).get("isoCode", "")) for o in n.get("originCountries") or []]
+        origins = [o for o in dict.fromkeys(origins) if o and place(o, meta)]
+        if not origins:
+            continue
+        d = n.get("ecValidationDate", "")
+        try:
+            date = datetime.strptime(d, "%d-%m-%Y %H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            continue
+        subject = clean(n.get("subject", ""), 220)
+        subject = subject[:1].upper() + subject[1:]
+        cls = (n.get("notificationClassification") or {}).get("description", "notification")
+        risk = (n.get("riskDecision") or {}).get("description", "undecided")
+        cat = (n.get("productCategory") or {}).get("description", "")
+        notifier = (n.get("notifyingCountry") or {}).get("organizationName", "")
+        group = "contamination" if (CHEM_PLUS.search(subject) or PATHOGEN.search(subject)) else "alert"
+        url = f"https://webgate.ec.europa.eu/rasff-window/screen/notification/{n['notifId']}"
+        lat, lon = place(origins[0], meta)
+        dy, dx = jitter(url, 3.0)
+        out.append({
+            "iso3": origins, "home": origins[0], "lat": round(lat + dy, 3), "lon": round(lon + dx, 3), "date": date,
+            "group": group, "label": f"EU RASFF {cls}", "title": subject,
+            "detail": f"Product: {cat}. Risk: {risk}. Reported by {notifier}. Reference {n.get('reference', '')}.",
+            "weight": RASFF_WEIGHT.get(risk, 0.55), "url": url, "source": "EU RASFF (European Commission)", "days": 60,
+        })
+    return out
+
+
+# ------------------------------------------------------------------ FDA Import Alerts (U.S. FDA)
+FOOD_ALERT_PREFIXES = {f"{i:02d}" for i in list(range(2, 47)) + [54]}   # FDA industry codes for foods & dietary supplements
+FOOD_WORDS = re.compile(r"food|pesticide|salmonell|filth|aflatoxin|seafood|fish|fruit|vegetable|spice|honey|juice|milk|cheese|"
+                        r"candy|lead|color|colour|melamine|histamine|decomposition|listeria|e\. ?coli|botulin|acidified|low-acid", re.I)
+
+
+def fda_import_alert_items(meta: dict, errors) -> list:
+    path = ROOT / "data" / "cache" / "fda_import_alerts.json"
+    if not path.exists():
+        errors.append("FDA import alert cache missing: run python3 scripts/fetch-fda-import-alerts.py")
+        return []
+    out = []
+    for iso, rec in json.loads(path.read_text()).items():
+        pl = place(iso, meta)
+        if not pl:
+            continue
+        for a in rec.get("alerts", []):
+            prefix = a["num"].split("-")[0]
+            if prefix not in FOOD_ALERT_PREFIXES and not (prefix == "99" and FOOD_WORDS.search(a["title"])):
+                continue
+            try:
+                date = datetime.strptime(a["date"], "%m/%d/%Y").replace(tzinfo=timezone.utc).isoformat()
+            except ValueError:
+                continue
+            group = "contamination" if (CHEM_PLUS.search(a["title"]) or PATHOGEN.search(a["title"]) or re.search(r"filth|unsanitary|insanitary", a["title"], re.I)) else "alert"
+            key = a["url"] + "#" + iso
+            dy, dx = jitter(key, 3.0)
+            name = (meta.get(iso) or {}).get("name") or EXTRA_PLACES.get(iso, (iso,))[0]
+            out.append({
+                "iso3": [iso], "home": iso, "lat": round(pl[0] + dy, 3), "lon": round(pl[1] + dx, 3), "date": date,
+                "group": group, "label": f"FDA import alert {a['num']}", "title": a["title"],
+                "detail": f"The U.S. FDA can detain these products from listed firms in {name} at the border ({a['type'] or 'import alert'}). Alert last updated {a['date']}.",
+                "weight": 0.7, "url": a["url"], "source": "U.S. FDA Import Alerts", "days": 180, "key": key,
+            })
+    return out
+
+
 def main() -> int:
     t0 = time.time()
     countries = load_countries()
@@ -325,48 +425,81 @@ def main() -> int:
     yearly: dict = {}
     fda = openfda(meta, errors, yearly)
     who = who_don(countries, meta, errors)
-    # WHO + ReliefWeb items are complete histories, so count them per year directly
-    for it in rw_items + who:
+    rasff = rasff_items(meta, errors)
+    fda_ia = fda_import_alert_items(meta, errors)
+    # sources that are complete histories are counted per year directly (openFDA totals come from its count API)
+    for it in rw_items + who + rasff + fda_ia:
         y = (it["date"] or "")[:4]
         if y:
-            for iso in it["iso3"][:1]:
+            for iso in it["iso3"]:
                 yearly.setdefault(iso, {})[y] = yearly.setdefault(iso, {}).get(y, 0) + 1
 
-    # de-duplicate multi-country ReliefWeb events (each country's feed lists the same disaster)
+    # de-duplicate (multi-country ReliefWeb events appear in several country feeds; one FDA alert covers many countries)
     seen, items = set(), []
-    for it in rw_items + who + fda:
-        if it["url"] in seen or not it["date"]:
+    for it in rw_items + who + fda + rasff + fda_ia:
+        key = it.get("key") or it["url"]
+        if key in seen or not it["date"]:
             continue
-        seen.add(it["url"])
+        seen.add(key)
         items.append(it)
     items.sort(key=lambda i: i["date"], reverse=True)
 
-    by_country = {c["iso3"]: 0 for c in countries}
+    # ---------------- write: compact index (globe) + one detailed file per country (panels)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    groups = list(GROUPS)
+    sources = sorted({i["source"] for i in items})
+    isos = sorted({iso for i in items for iso in i["iso3"]} | set(meta))
+    idx = {iso: k for k, iso in enumerate(isos)}
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    events, per_country = [], {iso: [] for iso in isos}
     for it in items:
+        day = (datetime.fromisoformat(it["date"]) - epoch).days
+        events.append([[idx[i] for i in it["iso3"]], round(it["lat"], 2), round(it["lon"], 2), day,
+                       groups.index(it["group"]), round(it["weight"] * 100), it.get("days") or 0, sources.index(it["source"])])
+        rec = {k: it[k] for k in ("title", "url", "date", "group", "label", "source", "weight", "days") if k in it}
+        if it.get("detail"):
+            rec["detail"] = it["detail"]
+        if len(it["iso3"]) > 1:
+            rec["also"] = it["iso3"]
         for iso in it["iso3"]:
-            if iso in by_country:
-                by_country[iso] += 1
-
-    payload = {
-        "generated": datetime.now(timezone.utc).isoformat(),
-        "scope": "food safety only",
+            per_country[iso].append(rec)
+    names = {**{c["iso3"]: c["name"] for c in countries}, **{k: v[0] for k, v in EXTRA_PLACES.items()}}
+    for old in OUT_DIR.glob("*.json"):
+        old.unlink()
+    for iso, lst in per_country.items():   # every country gets a file, even an empty one (no 404s in the browser)
+        if True:
+            (OUT_DIR / f"{iso}.json").write_text(json.dumps({"iso3": iso, "name": names.get(iso, iso), "count": len(lst), "items": lst},
+                                                            ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    counts = {iso: len(per_country[iso]) for iso in isos}
+    index = {
+        "generated": datetime.now(timezone.utc).isoformat(), "scope": "food safety only",
         "sources": {
-            "openfda": "https://open.fda.gov/apis/food/enforcement/",
-            "who_don": "https://www.who.int/emergencies/disease-outbreak-news",
-            "reliefweb": "https://reliefweb.int/disasters",
+            "EU RASFF (European Commission)": "https://webgate.ec.europa.eu/rasff-window/screen/search",
+            "U.S. FDA Import Alerts": "https://www.accessdata.fda.gov/cms_ia/ialist.html",
+            "U.S. FDA (openFDA)": "https://open.fda.gov/apis/food/enforcement/",
+            "WHO Disease Outbreak News": "https://www.who.int/emergencies/disease-outbreak-news",
+            "ReliefWeb (UN OCHA)": "https://reliefweb.int/disasters",
         },
-        "groups": GROUPS,
-        "items": items,
-        "counts": by_country,
-        "yearly": yearly,
+        "groups": groups, "sourceList": sources, "countries": isos, "counts": counts, "yearly": yearly,
+        "eventFields": ["countryIndexes", "lat", "lon", "dayNumber", "groupIndex", "weightPct", "activeDays", "sourceIndex"],
+        "events": events,
     }
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (OUT_DIR / "index.json").write_text(json.dumps(index, separators=(",", ":")), encoding="utf-8")
+    stale = ROOT / "data" / "crises.json"
+    if stale.exists():
+        stale.unlink()   # replaced by data/issues/
+
     per = {}
     for it in items:
         per[it["source"]] = per.get(it["source"], 0) + 1
-    print(f"{len(items)} food-safety items · {sum(1 for v in by_country.values() if v)} of {len(by_country)} countries have at least one")
-    print("  " + " · ".join(f"{k}: {v}" for k, v in per.items()))
-    print(f"wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB) in {time.time() - t0:.0f}s")
+    who_members = [c["iso3"] for c in countries]
+    under = sorted(((counts[i], names[i]) for i in who_members if counts[i] < 20))
+    print(f"{len(items)} food-safety issues from {len(per)} official sources")
+    print("  " + " · ".join(f"{k}: {v}" for k, v in sorted(per.items(), key=lambda kv: -kv[1])))
+    print(f"WHO member states with >= 20 issues: {len(who_members) - len(under)} of {len(who_members)}")
+    print(f"index {((OUT_DIR / 'index.json').stat().st_size) // 1024} KB · {sum(1 for _ in OUT_DIR.glob('*.json')) - 1} country files · {time.time() - t0:.0f}s")
+    if under:
+        print("fewer than 20: " + ", ".join(f"{n} ({c})" for c, n in under))
     if errors:
         print(f"{len(errors)} note(s):\n  " + "\n  ".join(errors[:20]))
     return 0

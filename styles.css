@@ -904,3 +904,16 @@ html.fourd-open .cursor-ring, html.fourd-open .cursor-dot, html.fourd-open .spot
   .fd-hud:has(.fd-tour:not([hidden])) .fd-w, .fd-hud:has(.fd-panel:not([hidden])) .fd-legend { display: none; }
   .fd-hud:has(.fd-tour:not([hidden])) .fd-tour { bottom: 178px; }
 }
+.fd-records { margin: -6px 0 0; font-size: 12.5px; color: var(--fd-ink2); }
+.fd-records b { color: var(--fd-ink); font-size: 15px; }
+.fd-more { align-self: flex-start; margin-top: 8px; }
+
+/* country drawer: food-safety issues list */
+.drawer-issues h3 { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 4px; font-family: var(--serif); font-weight: 400; font-size: 22px; }
+.issue-total { font-family: var(--sans); font-size: 14px; font-weight: 700; color: var(--sage); }
+.issue-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.issue-list a { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; text-decoration: none; background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.issue-list a:hover { background: var(--sage-soft); }
+.issue-list b { font-weight: 600; font-size: 14px; line-height: 1.35; }
+.issue-list small { color: var(--ink-3); font-size: 12px; }
+.issue-more { margin-top: 10px; border: 0; cursor: pointer; border-radius: 999px; padding: 8px 14px; font: 600 13px var(--sans); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--hair-2); color: var(--ink); }

@@ -103,16 +103,16 @@ export function createHud(root, { motionSupported, touch }) {
 const fmtDate = (ms, o = { day: "numeric", month: "short", year: "numeric" }) => new Date(ms).toLocaleDateString(undefined, o);
 
 function eventRow(e) {
-  const g = GROUPS[e.group] || GROUPS.humanitarian;
+  const g = GROUPS[e.group] || GROUPS.alert;
   return `<li><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">
-    <span class="fd-ev-type"><i style="background:${g.color}"></i>${esc(e.label)}${e.level ? ` · ${esc(e.level)} alert` : ""}</span>
+    <span class="fd-ev-type"><i style="background:${g.color}"></i>${esc(e.label || g.label)}</span>
     <b>${esc(e.title)}</b>
     ${e.detail ? `<span class="fd-ev-detail">${esc(e.detail.length > 170 ? e.detail.slice(0, 170) + "…" : e.detail)}</span>` : ""}
     <small>${esc(fmtDate(e.date))} · ${esc(e.source)} · ${esc(host(e.url))} ↗</small></a></li>`;
 }
 
 /** Render the country HUD. */
-export function renderCountry(el, { name, iso3, meta, active, history, trend, simMs, nowMs, liveStatus }) {
+export function renderCountry(el, { name, iso3, meta, active, history, historyLimit = 20, total = 0, bySource = {}, trend, simMs, nowMs, liveStatus }) {
   const future = simMs > nowMs + DAY_MS;
   let trendHtml = "";
   if (trend) {
@@ -135,13 +135,15 @@ export function renderCountry(el, { name, iso3, meta, active, history, trend, si
       <div><span class="fd-eyebrow">${esc(meta ? meta.continent : "Territory")} · ${esc(iso3 || "—")}</span><h2>${esc(name)}</h2></div>
       <button class="fd-btn fd-round" data-act="close" aria-label="Close country panel">✕</button>
     </div>
+    <p class="fd-records"><b>${total.toLocaleString()}</b> official food-safety record${total === 1 ? "" : "s"}${total ? ": " + Object.entries(bySource).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v.toLocaleString()}`).join(", ") : ". No recall, border rejection, import alert or foodborne outbreak for this country appears in these official sources."}</p>
     <section><h3>${future ? "Food-safety issues up to now" : `Food-safety issues on ${esc(fmtDate(simMs))}`} <em>${active.length}</em></h3>
-      ${active.length ? `<ul class="fd-events">${active.slice(0, 8).map(eventRow).join("")}</ul>`
+      ${active.length ? `<ul class="fd-events">${active.slice(0, 12).map(eventRow).join("")}</ul>`
         : `<p class="fd-note">No recall, contamination or foodborne-outbreak record from these sources is active on this date.</p>`}</section>
     ${trendHtml}
-    ${history.length ? `<section><h3>Earlier food-safety issues</h3><ul class="fd-events fd-compact">${history.slice(0, 6).map(eventRow).join("")}</ul></section>` : ""}
+    ${history.length ? `<section><h3>Earlier food-safety issues <em>${history.length.toLocaleString()}</em></h3><ul class="fd-events fd-compact">${history.slice(0, historyLimit).map(eventRow).join("")}</ul>
+      ${history.length > historyLimit ? `<button class="fd-btn fd-more" data-act="more">Show ${Math.min(20, history.length - historyLimit)} more of ${(history.length - historyLimit).toLocaleString()}</button>` : ""}</section>` : ""}
     ${sources.length ? `<section><h3>Official food-safety sources</h3><ul class="fd-sources">${sources.map((s) =>
       `<li><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"><small>${esc(s.tag)}</small><b>${esc(s.name)}</b><span>${esc(host(s.url))} ↗</span></a></li>`).join("")}</ul></section>` : ""}
-    <p class="fd-attrib">Data: U.S. FDA (openFDA &amp; recalls), WHO Disease Outbreak News, ReliefWeb (UN OCHA), CDC, UK FSA, CFIA · ${liveStatus === "live" ? "live + snapshot" : "saved snapshot"}</p>`;
+    <p class="fd-attrib">Data: EU RASFF (European Commission), U.S. FDA import alerts, openFDA recalls, WHO Disease Outbreak News, ReliefWeb (UN OCHA), CDC, UK FSA, CFIA. ${liveStatus === "live" ? "Live and saved data." : "Saved data."}</p>`;
   el.hidden = false;
 }

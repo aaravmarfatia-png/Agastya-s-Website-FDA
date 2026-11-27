@@ -12,7 +12,7 @@ import { gsap } from "gsap";
 
 import { loadWorld, Globe } from "./globe.js";
 import { Tesseract, Fabric, makeStars } from "./lattice.js";
-import { loadCrises, refreshLive, buildTrends, Beacons, Arcs, GROUPS } from "./crises.js";
+import { loadCrises, refreshLive, buildTrends, issuesFor, loadCountry, Beacons, Arcs, GROUPS } from "./crises.js";
 import { HeadTracker, MotionInput } from "./sensors.js";
 import { SpatialAudio } from "./audio.js";
 import { createHud, renderCountry } from "./hud.js";
@@ -20,6 +20,7 @@ import { latLonToVec3, subsolarPoint, clamp, lerp, esc, DAY_MS } from "./util.js
 import { haptics } from "./haptics.js";
 import { detectTier, BUDGET, shortGpuName } from "./gpu.js";
 import { Tour } from "./tour.js";
+import { ALIASES } from "./aliases.js";
 
 // Spacetime lens + chromatic aberration + vignette (runs after bloom)
 const LensShader = {
@@ -281,14 +282,22 @@ export async function mount({ onExit, audioCtx }) {
     ui.play.setAttribute("aria-pressed", String(time.speed !== 0));
   }
 
-  function openPanel(idx, fly = true) {
+  let panelToken = 0, panelIso = null, historyLimit = 20;
+  async function openPanel(idx, fly = true) {
     const c = world.countries[idx];
     const iso = c.iso3, meta = iso && countryMeta[iso];
+    if (iso !== panelIso) { panelIso = iso; historyLimit = 20; }
+    const token = ++panelToken;
+    if (fly) { ui.panel.hidden = false; ui.panel.innerHTML = `<p class="fd-note">Loading ${store.counts?.[iso] ?? ""} official records for ${esc(meta?.name || c.name)}…</p>`; }
+    const all = await issuesFor(store, iso);           // full detail for this country (fetched once)
+    if (token !== panelToken) return;                  // a newer request won the race
     const now = nowReal(), future = time.sim > now + DAY_MS, ms = future ? now : time.sim;
-    const mine = store.events.filter((e) => e.iso3 && e.iso3.includes(iso)).sort((a, b) => b.date - a.date);
+    const mine = all.filter((e) => e.date <= Math.max(ms, now));
     const active = mine.filter((e) => e.date <= ms && ms <= e.end);
     const history = mine.filter((e) => !active.includes(e) && e.date <= ms);
-    renderCountry(ui.panel, { name: meta?.name || c.name, iso3: iso, meta, active, history, trend: trends.get(iso), simMs: time.sim, nowMs: now, liveStatus: store.liveStatus });
+    const bySource = {};
+    for (const e of all) bySource[e.source] = (bySource[e.source] || 0) + 1;
+    renderCountry(ui.panel, { name: meta?.name || c.name, iso3: iso, meta, active, history, historyLimit, total: all.length, bySource, trend: trends.get(iso), simMs: time.sim, nowMs: now, liveStatus: store.liveStatus });
     if (fly) {
       // arcs to other countries sharing the same events (multi-country disasters & outbreaks)
       const home = countryMeta[iso] ? { lat: countryMeta[iso].lat, lon: countryMeta[iso].lon } : c.centroid;
@@ -419,6 +428,7 @@ export async function mount({ onExit, audioCtx }) {
     if (act === "tour-next") return tour && tour.next();
     if (act === "tour-prev") return tour && tour.prev();
     if (act === "close") return deselect();
+    if (act === "more") { historyLimit += 20; return openPanel(st.select, false); }
     if (act === "live") { time.live = true; time.speed = 0; time.sim = nowReal(); haptics.tick(); }
     if (act === "play") { time.live = false; time.speed = time.speed > 0 ? 0 : 30; }
     if (act === "ff") { time.live = false; time.speed = time.speed >= 30 ? Math.min(time.speed * 2, 480) : 120; }
@@ -572,7 +582,8 @@ export async function mount({ onExit, audioCtx }) {
 
   // ---------------------------------------------------------------- finder (keyboard & screen-reader parity for 3D hotspots)
   const norm = (t) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const findable = world.countries.map((c) => ({ idx: c.index, name: countryMeta[c.iso3]?.name || c.name, iso: c.iso3 || "" }))
+  const findable = world.countries.map((c) => ({ idx: c.index, name: countryMeta[c.iso3]?.name || c.name, iso: c.iso3 || "",
+    aka: (ALIASES[c.iso3] || []).map(norm) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   let findResults = [], findActive = -1;
   function renderFind() {
@@ -585,7 +596,8 @@ export async function mount({ onExit, audioCtx }) {
   }
   ui.find.addEventListener("input", () => {
     const q = norm(ui.find.value.trim());
-    findResults = q ? findable.filter((r) => norm(r.name).startsWith(q) || r.iso.toLowerCase() === q).concat(findable.filter((r) => !norm(r.name).startsWith(q) && norm(r.name).includes(q))).slice(0, 7) : [];
+    const starts = (r) => norm(r.name).startsWith(q) || r.iso.toLowerCase() === q || r.aka.some((a) => a.startsWith(q));
+    findResults = q ? findable.filter(starts).concat(findable.filter((r) => !starts(r) && (norm(r.name).includes(q) || r.aka.some((a) => a.includes(q))))).slice(0, 7) : [];
     findActive = findResults.length ? 0 : -1; renderFind();
   }, { signal });
   ui.find.addEventListener("keydown", (e) => {
@@ -610,6 +622,7 @@ export async function mount({ onExit, audioCtx }) {
   try { if (!localStorage.getItem("fsw4d-hints")) { ui.hints.hidden = false; hintTimer = setTimeout(dismissHints, 12000); } } catch { ui.hints.hidden = false; }
 
   // ---------------------------------------------------------------- guided tour (scroll-linked timeline)
+  let latestTitles = {};
   function buildChapters() {
     const now = nowReal();
     const counts = new Map();
@@ -624,8 +637,8 @@ export async function mount({ onExit, audioCtx }) {
     const ch = [{ title: "The world's food-safety picture", text: `${totalActive} recalls, contamination findings and foodborne outbreaks are active right now. Every beacon links to an official source.`, lat: camLat, lon: camLon, dist: fitDist * 1.02, W: 0, yearsBack: 0 }];
     for (const [iso, n] of top) {
       const m = countryMeta[iso];
-      const latest = activeAt(now).filter((e) => e.home === iso).sort((a, b) => b.date - a.date)[0];
-      ch.push({ title: m.name, text: `${n} active issue${n === 1 ? "" : "s"}. Latest: ${latest ? latest.title : ""}`, lat: m.lat, lon: m.lon, dist: Math.max(2.1, fitDist * 0.62), W: 0, yearsBack: 0, iso });
+      const latest = (latestTitles[iso] || [])[0];
+      ch.push({ title: m.name, text: `${n} active issue${n === 1 ? "" : "s"}.${latest ? ` Latest: ${latest.title}` : ""}`, lat: m.lat, lon: m.lon, dist: Math.max(2.1, fitDist * 0.62), W: 0, yearsBack: 0, iso });
     }
     ch.push({ title: "Where recalls & alerts cluster", text: "The W-axis shifts the globe into a density layer: brighter countries have more recalls and safety alerts in the record.", lat: 30, lon: -40, dist: fitDist * 1.05, W: 1, yearsBack: 0 });
     ch.push({ title: "Foodborne outbreak density", text: "Further along the W-axis: cholera, typhoid, hepatitis A/E, Salmonella and other food- and waterborne outbreaks reported by WHO and ReliefWeb.", lat: 5, lon: 25, dist: fitDist * 1.05, W: 2, yearsBack: 0 });
@@ -633,8 +646,14 @@ export async function mount({ onExit, audioCtx }) {
     ch.push({ title: "Now explore on your own", text: "Drag to orbit, click any country, or search for one. Press T to replay this tour.", lat: 25, lon: -20, dist: fitDist * 1.02, W: 0, yearsBack: 0 });
     return ch;
   }
-  function toggleTour(on) {
+  async function toggleTour(on) {
     if (on && !tour) {
+      // fetch the detail files of the countries the tour will visit, so chapters can name the latest issue
+      const now = nowReal(), counts = new Map();
+      for (const e of activeAt(now)) counts.set(e.home, (counts.get(e.home) || 0) + 1);
+      const top = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([iso]) => iso);
+      await Promise.all(top.map(async (iso) => { latestTitles[iso] = (await loadCountry(iso)).filter((e) => e.date <= now); }));
+      if (tour) return;
       dismissHints();
       if (st.select >= 0) deselect();
       tour = new Tour(buildChapters(), {
